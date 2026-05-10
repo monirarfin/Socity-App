@@ -210,3 +210,28 @@ export async function transcribeAudio(base64Audio: string, mimeType: string = "a
     return null;
   }
 }
+
+export async function explainFamilyTree(treeData: any, subjectName: string) {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `
+        You are a genealogy expert for the Hazi Bari Foundation.
+        Given the following family tree data (ancestors) for ${subjectName}:
+        ${JSON.stringify(treeData)}
+
+        Task:
+        1. Explain the lineage and relationships clearly in Bengali.
+        2. Mention parents, grandparents, and any further ancestors found.
+        3. Make the description engaging and easy to understand for family members.
+        4. Use respectful language (Standard Bengali/Suddho Bhasha).
+
+        Return strictly the explanatory text in Bengali.
+      `,
+    });
+    return response.text;
+  } catch (error) {
+    console.error("AI Tree Explanation Error:", error);
+    return "দুঃখিত, এই মুহূর্তে সম্পর্কের ব্যাখ্যা তৈরি করা সম্ভব হচ্ছে না।";
+  }
+}

@@ -26,6 +26,12 @@ export interface UserProfile {
   fatherName?: string;
   motherName?: string;
   houseName?: string;
+  village?: string;
+  district?: string;
+  nidNumber?: string;
+  memberId?: string;
+  memberSlug?: string;
+  bio?: string;
   houseSegment?: string;
   familyHead?: string;
   mobile?: string;
@@ -37,7 +43,8 @@ export interface UserProfile {
   role: 'member' | 'admin' | 'collector' | 'director';
   isApproved: boolean;
   isPublicContribution?: boolean;
-  createdAt: string;
+  createdAt: any;
+  updatedAt?: any;
 }
 
 export interface BlockData {

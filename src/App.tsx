@@ -85,10 +85,13 @@ import {
   ArrowRight,
   CheckCircle,
   Scan,
-  Fingerprint
+  Fingerprint,
+  Edit3,
+  Shield
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { detectLineage, answerTreeQuestion, analyzeLineageImage, refineBlogPost, generatePostImage, transcribeAudio } from './services/geminiService';
+import * as d3 from 'd3';
+import { detectLineage, answerTreeQuestion, analyzeLineageImage, refineBlogPost, generatePostImage, transcribeAudio, explainFamilyTree } from './services/geminiService';
 
 // Helper for string similarity (Levenshtein Distance)
 function getSimilarity(s1: string, s2: string) {
@@ -297,7 +300,8 @@ export default function App() {
             photoURL: user.photoURL || undefined,
             role: 'member',
             isApproved: false,
-            createdAt: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           };
           setDoc(docRef, newProfile).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`));
         }
@@ -763,6 +767,7 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
   const [scannedData, setScannedData] = useState<any>(null);
   const [formData, setFormData] = useState({
     displayName: '',
+    photoURL: '',
     fatherName: '',
     motherName: '',
     houseName: '',
@@ -773,6 +778,21 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
     mobile: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const onPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const base64 = await handleImageUpload(file);
+      setFormData(prev => ({ ...prev, photoURL: base64 }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleAIResult = (child: string, father: string, fullSuggestion?: any) => {
     setScannedData(fullSuggestion);
@@ -810,6 +830,7 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
 
       const updateData = {
         ...formData,
+        uid: profile.uid,
         memberSlug: slug,
         memberId: `HB-${formData.displayName.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
         fatherId: autoFatherId || profile.fatherId,
@@ -906,6 +927,33 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
           </div>
 
           <form onSubmit={handleSubmit} className="p-10 space-y-8">
+            <div className="flex flex-col items-center gap-4 py-4 bg-foundation-50 rounded-3xl border-2 border-dashed border-foundation-200">
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-lg relative bg-white">
+                  {formData.photoURL ? (
+                    <img src={formData.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-foundation-300">
+                      <Camera size={40} />
+                    </div>
+                  )}
+                  {isUploading && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+                <label className="absolute bottom-0 right-0 w-8 h-8 bg-indigo-600 rounded-full border-2 border-white flex items-center justify-center text-white cursor-pointer hover:bg-indigo-700 transition-colors shadow-md">
+                  <Camera size={14} />
+                  <input type="file" className="hidden" accept="image/*" onChange={onPhotoUpload} />
+                </label>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-black uppercase tracking-widest text-foundation-400">Profile Photo</p>
+                <p className="text-[9px] text-foundation-400 mt-0.5">Click camera icon to upload</p>
+              </div>
+            </div>
+
             <div className="space-y-6">
               <div className="grid grid-cols-1 gap-6">
                 <Input 
@@ -2504,11 +2552,30 @@ function SocialPost({ post, profile, isOwner, setActiveTab, onEdit, onDelete, on
 }
 
 function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, profile: UserProfile | null, setActiveTab: (tab: string) => void }) {
+  const isApprovedMember = profile?.isApproved === true;
+  const canApprove = isAdmin || isApprovedMember;
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<UserProfile | null>(null);
+  const [editingMember, setEditingMember] = useState<UserProfile | null>(null);
   const [showSmartJoin, setShowSmartJoin] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [registrationMode, setRegistrationMode] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [formData, setFormData] = useState({
+    displayName: '',
+    fatherName: '',
+    motherName: '',
+    houseName: '',
+    village: '',
+    district: '',
+    nidNumber: '',
+    familyHead: '',
+    mobile: '',
+    photoURL: ''
+  });
 
   useEffect(() => {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
@@ -2519,6 +2586,154 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
     return () => unsubscribe();
   }, []);
 
+  const handleRegistrationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setRegistrationStatus('idle');
+    try {
+      const slug = formData.displayName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+      
+      // Auto-linking logic
+      let autoFatherId = undefined;
+      const q = query(collection(db, 'users'), where('displayName', '==', formData.fatherName), limit(1));
+      const fatherSnap = await getDocs(q);
+      if (!fatherSnap.empty) {
+        autoFatherId = fatherSnap.docs[0].id;
+      }
+
+      const newMemberData = {
+        ...formData,
+        uid: slug,
+        memberSlug: slug,
+        memberId: `HB-${formData.displayName.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        fatherId: autoFatherId || '',
+        isApproved: false,
+        role: 'member' as const,
+        photoURL: formData.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.displayName)}&background=random&color=fff`,
+        bio: '',
+        tags: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        registeredBy: profile?.uid || 'system'
+      };
+
+      // USE SLUG AS DOCUMENT ID
+      await setDoc(doc(db, 'users', slug), newMemberData);
+
+      await addDoc(collection(db, 'notifications'), {
+        type: 'registration',
+        userId: slug,
+        userName: formData.displayName,
+        userPhotoURL: '',
+        message: `${formData.displayName} has been registered.${autoFatherId ? ' System auto-linked their lineage.' : ''}`,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+
+      setRegistrationStatus('success');
+      setFormData({
+        displayName: '',
+        fatherName: '',
+        motherName: '',
+        houseName: '',
+        village: '',
+        district: '',
+        nidNumber: '',
+        familyHead: '',
+        mobile: '',
+        photoURL: ''
+      });
+    } catch (err) {
+      console.error(err);
+      setRegistrationStatus('error');
+      setErrorMessage(err instanceof Error ? err.message : "নিবন্ধকরণ ব্যর্থ হয়েছে। আবার চেষ্টা করুন।");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const [editFormData, setEditFormData] = useState<any>(null);
+
+  useEffect(() => {
+    if (editingMember) {
+      setEditFormData({
+        displayName: editingMember.displayName || '',
+        fatherName: editingMember.fatherName || '',
+        motherName: editingMember.motherName || '',
+        houseName: editingMember.houseName || '',
+        village: editingMember.village || '',
+        district: editingMember.district || '',
+        nidNumber: editingMember.nidNumber || '',
+        mobile: editingMember.mobile || '',
+        familyHead: editingMember.familyHead || '',
+        bio: editingMember.bio || '',
+        photoURL: editingMember.photoURL || '',
+      });
+    }
+  }, [editingMember]);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember || !editFormData) return;
+    setIsSubmitting(true);
+    try {
+      const docRef = doc(db, 'users', editingMember.uid);
+      await updateDoc(docRef, {
+        ...editFormData,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update local members state immediately for better UX
+      setMembers(prev => prev.map(m => m.uid === editingMember.uid ? { ...m, ...editFormData } : m));
+      
+      // Refresh selected member if it's the one being edited
+      if (selectedMember?.uid === editingMember.uid) {
+        setSelectedMember({ ...selectedMember, ...editFormData });
+      }
+      
+      setEditingMember(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${editingMember.uid}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAIResult = (child: string, father: string, fullSuggestion?: any) => {
+    setShowSmartJoin(false);
+    setRegistrationMode(true);
+    setRegistrationStatus('idle');
+    setErrorMessage('');
+    
+    // Function to handle missing data
+    const getValue = (val: any) => (val && val !== 'null' && val !== 'NULL' ? val : 'তথ্য পাওয়া যায়নি');
+
+    setFormData({
+      displayName: getValue(fullSuggestion?.subject?.name || child),
+      fatherName: getValue(fullSuggestion?.father?.name || father),
+      motherName: getValue(fullSuggestion?.mother?.name),
+      village: getValue(fullSuggestion?.village),
+      district: getValue(fullSuggestion?.district),
+      nidNumber: getValue(fullSuggestion?.nidNumber),
+      houseName: getValue(fullSuggestion?.house),
+      familyHead: getValue(fullSuggestion?.father?.name),
+      mobile: ''
+    });
+  };
+
+  const handleRoleChange = async (uid: string, newRole: 'member' | 'admin' | 'collector' | 'director') => {
+    if (!isAdmin) return;
+    try {
+      await updateDoc(doc(db, 'users', uid), { 
+        role: newRole,
+        updatedAt: serverTimestamp() 
+      });
+      // Local state will be updated via onSnapshot
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
+    }
+  };
+
   const filteredMembers = members.filter(m => {
     const query = searchQuery.toLowerCase();
     return (
@@ -2528,14 +2743,19 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
       m.houseName?.toLowerCase().includes(query) ||
       m.village?.toLowerCase().includes(query) ||
       m.district?.toLowerCase().includes(query) ||
-      m.nidNumber?.toLowerCase().includes(query)
+      m.nidNumber?.toLowerCase().includes(query) ||
+      m.memberId?.toLowerCase().includes(query) ||
+      m.memberSlug?.toLowerCase().includes(query)
     );
   });
 
   const toggleApproval = async (uid: string, currentStatus: boolean) => {
-    if (!isAdmin) return;
+    if (!canApprove) return;
     try {
-      await setDoc(doc(db, 'users', uid), { isApproved: !currentStatus }, { merge: true });
+      await setDoc(doc(db, 'users', uid), { 
+        isApproved: !currentStatus,
+        updatedAt: serverTimestamp() 
+      }, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
     }
@@ -2573,6 +2793,366 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
       </motion.div>
 
       <AnimatePresence>
+        {registrationMode && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] grid place-items-center p-4 bg-foundation-900/95 backdrop-blur-2xl"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-[3rem] w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-8 border-b border-foundation-100 flex items-center justify-between bg-indigo-900 text-white">
+                <div>
+                  <h3 className="text-xl font-display font-bold">Complete Registration</h3>
+                  <p className="text-[10px] text-indigo-300 uppercase font-black">Step 2: Profile Review</p>
+                </div>
+                <button 
+                  onClick={() => setRegistrationMode(false)}
+                  className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                {registrationStatus === 'idle' ? (
+                  <form onSubmit={handleRegistrationSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 gap-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <Input 
+                          label="Full Name (English)" 
+                          required 
+                          value={formData.displayName} 
+                          onChange={(e: any) => setFormData({...formData, displayName: e.target.value})}
+                        />
+                        <div className="flex flex-col">
+                          <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Profile Photo</label>
+                          <div className="flex items-center gap-3 bg-foundation-50 p-2 rounded-xl border border-foundation-200">
+                            <img 
+                              src={formData.photoURL || `https://ui-avatars.com/api/?name=${formData.displayName}`} 
+                              className="w-10 h-10 rounded-lg object-cover bg-white" 
+                              alt="" 
+                            />
+                            <label className="flex-1 bg-white border border-foundation-300 rounded-lg py-2 text-[10px] text-center font-bold uppercase tracking-widest cursor-pointer hover:bg-foundation-50 transition-colors">
+                              <Camera size={12} className="inline mr-2" /> Upload
+                              <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  try {
+                                    const base64 = await handleImageUpload(file);
+                                    setFormData({...formData, photoURL: base64});
+                                  } catch (err) {
+                                    console.error(err);
+                                  }
+                                }
+                              }} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <Input 
+                          label="Father's Name" 
+                          required 
+                          value={formData.fatherName} 
+                          onChange={(e: any) => setFormData({...formData, fatherName: e.target.value})} 
+                        />
+                        <Input 
+                          label="Mother's Name" 
+                          value={formData.motherName} 
+                          onChange={(e: any) => setFormData({...formData, motherName: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <Input 
+                          label="Village (গ্রাম)" 
+                          required 
+                          value={formData.village} 
+                          onChange={(e: any) => setFormData({...formData, village: e.target.value})} 
+                        />
+                        <Input 
+                          label="District (জেলা)" 
+                          required 
+                          value={formData.district} 
+                          onChange={(e: any) => setFormData({...formData, district: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <Input 
+                          label="House Name (বাড়ির নাম)" 
+                          required 
+                          value={formData.houseName} 
+                          onChange={(e: any) => setFormData({...formData, houseName: e.target.value})} 
+                        />
+                        <Input 
+                          label="Document Number (NID/Birth)" 
+                          value={formData.nidNumber} 
+                          onChange={(e: any) => setFormData({...formData, nidNumber: e.target.value})} 
+                        />
+                      </div>
+
+                      <Input 
+                        label="Mobile Contact" 
+                        placeholder="+880..."
+                        value={formData.mobile} 
+                        onChange={(e: any) => setFormData({...formData, mobile: e.target.value})} 
+                      />
+                    </div>
+
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full bg-indigo-600 text-white rounded-2xl px-8 py-5 text-sm font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus size={20} />
+                          Register as Family Member
+                        </>
+                      )}
+                    </button>
+                  </form>
+                ) : registrationStatus === 'success' ? (
+                  <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="h-full flex flex-col items-center justify-center text-center p-4"
+                  >
+                    <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-200">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", damping: 12, stiffness: 200, delay: 0.2 }}
+                      >
+                        <CheckCircle2 size={48} className="text-emerald-500" />
+                      </motion.div>
+                    </div>
+                    <h4 className="text-2xl font-display font-bold text-foundation-900 mb-2">সাফল্য! (Success)</h4>
+                    <p className="text-foundation-600 mb-8 max-w-sm">
+                      Your registration has been successful. The member profile is now pending verification for trust.
+                    </p>
+                    <button 
+                      onClick={() => setRegistrationMode(false)}
+                      className="bg-foundation-900 text-white px-10 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all active:scale-95"
+                    >
+                      নিবন্ধকরণ সম্পন্ন করুন (Finish)
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="h-full flex flex-col items-center justify-center text-center p-4"
+                  >
+                    <div className="w-24 h-24 bg-rose-100 rounded-full flex items-center justify-center mb-6 shadow-sm border border-rose-200 text-rose-500">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", damping: 12, stiffness: 200, delay: 0.2 }}
+                      >
+                        <XCircle size={48} />
+                      </motion.div>
+                    </div>
+                    <h4 className="text-2xl font-display font-bold text-foundation-900 mb-2">ত্রুটি! (Error)</h4>
+                    <p className="text-rose-600 mb-8 max-w-sm font-medium">
+                      {errorMessage || "নিবন্ধকরণ ব্যর্থ হয়েছে। দয়া করে আবার চেষ্টা করুন।"}
+                    </p>
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={() => setRegistrationStatus('idle')}
+                        className="bg-foundation-900 text-white px-10 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all active:scale-95"
+                      >
+                        পুনরায় চেষ্টা করুন (Retry)
+                      </button>
+                      <button 
+                        onClick={() => setRegistrationMode(false)}
+                        className="bg-foundation-100 text-foundation-600 px-6 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-foundation-200 transition-all active:scale-95"
+                      >
+                        বাতিল (Cancel)
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {editingMember && editFormData && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setEditingMember(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-display font-bold">প্রোফাইল সংশোধন (Update Profile)</h3>
+                  <p className="text-xs text-indigo-100 mt-1">Update member information</p>
+                </div>
+                <button 
+                  onClick={() => setEditingMember(null)}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  <div className="grid grid-cols-1 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Full Name (English)" 
+                        required 
+                        value={editFormData.displayName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, displayName: e.target.value})}
+                      />
+                      <div className="flex flex-col">
+                        <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Profile Photo</label>
+                        <div className="flex items-center gap-3 bg-foundation-50 p-2 rounded-xl border border-foundation-200">
+                          <img 
+                            src={editFormData.photoURL || `https://ui-avatars.com/api/?name=${editFormData.displayName}`} 
+                            className="w-10 h-10 rounded-lg object-cover bg-white" 
+                            alt="" 
+                          />
+                          <label className="flex-1 bg-white border border-foundation-300 rounded-lg py-2 text-[10px] text-center font-bold uppercase tracking-widest cursor-pointer hover:bg-foundation-50 transition-colors">
+                            <Camera size={12} className="inline mr-2" /> Change Photo
+                            <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                try {
+                                  const base64 = await handleImageUpload(file);
+                                  setEditFormData({...editFormData, photoURL: base64});
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }
+                            }} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Father's Name" 
+                        required 
+                        value={editFormData.fatherName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, fatherName: e.target.value})} 
+                      />
+                      <Input 
+                        label="Mother's Name" 
+                        value={editFormData.motherName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, motherName: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Village (গ্রাম)" 
+                        required 
+                        value={editFormData.village} 
+                        onChange={(e: any) => setEditFormData({...editFormData, village: e.target.value})} 
+                      />
+                      <Input 
+                        label="District (জেলা)" 
+                        required 
+                        value={editFormData.district} 
+                        onChange={(e: any) => setEditFormData({...editFormData, district: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="House Name (বাড়ির নাম)" 
+                        required 
+                        value={editFormData.houseName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, houseName: e.target.value})} 
+                      />
+                      <Input 
+                        label="Document Number (NID/Birth)" 
+                        value={editFormData.nidNumber} 
+                        onChange={(e: any) => setEditFormData({...editFormData, nidNumber: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Mobile Contact" 
+                        placeholder="+880..."
+                        value={editFormData.mobile} 
+                        onChange={(e: any) => setEditFormData({...editFormData, mobile: e.target.value})} 
+                      />
+                      <Input 
+                        label="Head of Family" 
+                        value={editFormData.familyHead} 
+                        onChange={(e: any) => setEditFormData({...editFormData, familyHead: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="relative">
+                      <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Short Bio</label>
+                      <textarea 
+                        value={editFormData.bio} 
+                        onChange={(e) => setEditFormData({...editFormData, bio: e.target.value})}
+                        className="w-full bg-foundation-50 border border-foundation-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+                        placeholder="Tell us about yourself..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 bg-indigo-600 text-white rounded-xl px-8 py-4 text-sm font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} />
+                          Save Changes
+                        </>
+                      )}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setEditingMember(null)}
+                      className="px-8 py-4 bg-foundation-100 text-foundation-600 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-foundation-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
         {showSmartJoin && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -2600,13 +3180,7 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
               </div>
               
               <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                <AIBongshoSuite onResult={(child, father, full) => {
-                  // In a real flow, this would redirect to registration page or complete a profile
-                  // Since the user is likely already signed in but maybe not a "member" profile yet,
-                  // we'd update their profile data.
-                  alert(`ID Verified: ${child}. Suggested Father: ${father}. Registering now...`);
-                  setShowSmartJoin(false);
-                }} />
+                <AIBongshoSuite onResult={handleAIResult} />
               </div>
 
               <div className="p-6 bg-foundation-50 border-t border-foundation-100 text-center">
@@ -2651,29 +3225,55 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
           </div>
         ) : (
           filteredMembers.map(member => (
-            <div key={member.uid} className="p-4 flex items-center justify-between hover:bg-foundation-50 transition-colors group">
+            <div key={member.uid} className={`relative p-4 flex items-center justify-between hover:bg-foundation-50 transition-colors group border-l-4 ${member.isApproved ? 'border-emerald-500' : 'border-amber-500 bg-amber-50/20'}`}>
               <div 
                 className="flex items-center gap-4 cursor-pointer flex-1"
                 onClick={() => setSelectedMember(member)}
               >
                 <img src={member.photoURL || `https://ui-avatars.com/api/?name=${member.displayName}`} alt="" className="w-10 h-10 rounded-full border border-foundation-300 transition-transform group-hover:scale-105" />
                 <div>
-                  <h4 className="font-bold text-foundation-900 text-sm group-hover:text-indigo-600 transition-colors">{member.displayName}</h4>
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="font-bold text-foundation-900 text-sm group-hover:text-indigo-600 transition-colors">{member.displayName}</h4>
+                    {member.isApproved && <ShieldCheck size={12} className="text-emerald-500" />}
+                  </div>
                   <p className="text-[10px] text-foundation-500 uppercase tracking-widest">{member.houseName} • {member.houseSegment}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {profile && profile.uid !== member.uid && (
+                {profile && profile.uid !== member.uid && member.email && (
                   <DirectMessageButton 
                     currentUser={profile} 
                     targetUser={member} 
                     onStartChat={() => setActiveTab('messages')}
                   />
                 )}
-                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${member.isApproved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                  {member.isApproved ? 'Verified' : 'Pending'}
-                </span>
                 {isAdmin && (
+                  <div className="relative group/role">
+                    <select 
+                      value={member.role || 'member'}
+                      onChange={(e) => handleRoleChange(member.uid, e.target.value as any)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="appearance-none bg-foundation-100 text-foundation-700 text-[9px] font-black uppercase tracking-wider px-3 py-1 pr-6 rounded-full border border-foundation-200 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-foundation-200 transition-colors"
+                    >
+                      <option value="member">Member</option>
+                      <option value="collector">Collector</option>
+                      <option value="director">Director</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                      <Shield size={8} className="text-foundation-400" />
+                    </div>
+                  </div>
+                )}
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                  member.isApproved 
+                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm shadow-emerald-100' 
+                    : 'bg-amber-100 text-amber-700 border border-amber-200 animate-pulse-subtle shadow-sm shadow-amber-100'
+                }`}>
+                  {member.isApproved ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                  {member.isApproved ? 'Verified' : 'Pending'}
+                </div>
+                {canApprove && (
                   <button 
                     onClick={(e) => { e.stopPropagation(); toggleApproval(member.uid, member.isApproved); }}
                     className="p-2 hover:bg-foundation-300 rounded-full text-foundation-700 transition-colors"
@@ -2734,6 +3334,14 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
                       </span>
                     )}
                   </div>
+                  {(isAdmin || profile?.uid === selectedMember.uid) && (
+                    <button 
+                      onClick={() => setEditingMember(selectedMember)}
+                      className="mt-4 flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors"
+                    >
+                      <Edit3 size={14} /> Edit Profile
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-8">
@@ -3255,13 +3863,86 @@ function LineageVisualizer({ user }: { user: UserProfile }) {
 }
 
 function ProfileComponent({ profile }: { profile: UserProfile | null }) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState<any>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (profile && isEditing) {
+      setEditFormData({
+        displayName: profile.displayName || '',
+        fatherName: profile.fatherName || '',
+        motherName: profile.motherName || '',
+        houseName: profile.houseName || '',
+        village: profile.village || '',
+        district: profile.district || '',
+        nidNumber: profile.nidNumber || '',
+        mobile: profile.mobile || '',
+        familyHead: profile.familyHead || '',
+        bio: profile.bio || '',
+      });
+    }
+  }, [profile, isEditing]);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile || !editFormData) return;
+    setIsSubmitting(true);
+    try {
+      await updateDoc(doc(db, 'users', profile.uid), {
+        ...editFormData,
+        updatedAt: serverTimestamp()
+      });
+      setIsEditing(false);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${profile.uid}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    setIsUploading(true);
+    try {
+      const base64 = await handleImageUpload(file);
+      await updateDoc(doc(db, 'users', profile.uid), { photoURL: base64 });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${profile.uid}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white p-8 rounded-2xl border border-foundation-300 shadow-sm text-center">
+      <div className="bg-white p-8 rounded-2xl border border-foundation-300 shadow-sm text-center relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4">
+          <button 
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-foundation-100 text-foundation-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-foundation-200 transition-all active:scale-95 border border-foundation-200"
+          >
+            <Edit3 size={14} /> Edit Profile
+          </button>
+        </div>
+        
         <div className="relative w-32 h-32 mx-auto mb-6">
-          <img src={profile?.photoURL || undefined} alt="" className="w-full h-full rounded-full border-4 border-foundation-300 p-1" />
+          <div className="w-full h-full rounded-full overflow-hidden border-4 border-foundation-100 shadow-inner bg-foundation-50 relative group">
+            <img src={profile?.photoURL || undefined} alt="" className="w-full h-full object-cover" />
+            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+              <Camera size={24} className="text-white" />
+              <input type="file" className="hidden" accept="image/*" onChange={onPhotoUpload} />
+            </label>
+            {isUploading && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
           {profile?.isApproved && (
-            <div className="absolute bottom-1 right-1 w-8 h-8 bg-foundation-500 rounded-full border-4 border-white flex items-center justify-center">
+            <div className="absolute bottom-1 right-1 w-8 h-8 bg-foundation-500 rounded-full border-4 border-white flex items-center justify-center z-10 shadow-lg">
               <ShieldCheck size={14} className="text-white" />
             </div>
           )}
@@ -3375,6 +4056,172 @@ function ProfileComponent({ profile }: { profile: UserProfile | null }) {
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {isEditing && editFormData && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setIsEditing(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-display font-bold">প্রোফাইল সংশোধন (Update Profile)</h3>
+                  <p className="text-xs text-indigo-100 mt-1">Update your member information</p>
+                </div>
+                <button 
+                  onClick={() => setIsEditing(false)}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  <div className="grid grid-cols-1 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Full Name (English)" 
+                        required 
+                        value={editFormData.displayName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, displayName: e.target.value})}
+                      />
+                      <div className="flex flex-col">
+                        <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Profile Photo</label>
+                        <div className="flex items-center gap-3 bg-foundation-50 p-2 rounded-xl border border-foundation-200">
+                          <img 
+                            src={editFormData.photoURL || `https://ui-avatars.com/api/?name=${editFormData.displayName}`} 
+                            className="w-10 h-10 rounded-lg object-cover bg-white" 
+                            alt="" 
+                          />
+                          <label className="flex-1 bg-white border border-foundation-300 rounded-lg py-2 text-[10px] text-center font-bold uppercase tracking-widest cursor-pointer hover:bg-foundation-50 transition-colors">
+                            <Camera size={12} className="inline mr-2" /> Change Photo
+                            <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                try {
+                                  const base64 = await handleImageUpload(file);
+                                  setEditFormData({...editFormData, photoURL: base64});
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }
+                            }} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Father's Name" 
+                        required 
+                        value={editFormData.fatherName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, fatherName: e.target.value})} 
+                      />
+                      <Input 
+                        label="Mother's Name" 
+                        value={editFormData.motherName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, motherName: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Village (গ্রাম)" 
+                        required 
+                        value={editFormData.village} 
+                        onChange={(e: any) => setEditFormData({...editFormData, village: e.target.value})} 
+                      />
+                      <Input 
+                        label="District (জেলা)" 
+                        required 
+                        value={editFormData.district} 
+                        onChange={(e: any) => setEditFormData({...editFormData, district: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="House Name (বাড়ির নাম)" 
+                        required 
+                        value={editFormData.houseName} 
+                        onChange={(e: any) => setEditFormData({...editFormData, houseName: e.target.value})} 
+                      />
+                      <Input 
+                        label="Document Number (NID/Birth)" 
+                        value={editFormData.nidNumber} 
+                        onChange={(e: any) => setEditFormData({...editFormData, nidNumber: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <Input 
+                        label="Mobile Contact" 
+                        placeholder="+880..."
+                        value={editFormData.mobile} 
+                        onChange={(e: any) => setEditFormData({...editFormData, mobile: e.target.value})} 
+                      />
+                      <Input 
+                        label="Head of Family" 
+                        value={editFormData.familyHead} 
+                        onChange={(e: any) => setEditFormData({...editFormData, familyHead: e.target.value})} 
+                      />
+                    </div>
+
+                    <div className="relative">
+                      <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Short Bio</label>
+                      <textarea 
+                        value={editFormData.bio} 
+                        onChange={(e) => setEditFormData({...editFormData, bio: e.target.value})}
+                        className="w-full bg-foundation-50 border border-foundation-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+                        placeholder="Tell us about yourself..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 bg-indigo-600 text-white rounded-xl px-8 py-4 text-sm font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} />
+                          Save Changes
+                        </>
+                      )}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="px-8 py-4 bg-foundation-100 text-foundation-600 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-foundation-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -3443,25 +4290,80 @@ function FatherLinkSelector({ profile }: { profile: UserProfile | null }) {
   );
 }
 
+const handleImageUpload = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; // Limit size for Firestore
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string, fullSuggestion?: any) => void }) {
   const [activeMode, setActiveMode] = useState<'dictator' | 'oracle' | 'scanner'>('dictator');
   const [input, setInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [suggestion, setSuggestion] = useState<any>(null);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [dbMatches, setDbMatches] = useState<any[]>([]);
   const [oracleAnswer, setOracleAnswer] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const mergeSuggestions = (newSuggestions: any[]) => {
+    const merged = { ...newSuggestions[0] };
+    
+    newSuggestions.slice(1).forEach(suggest => {
+      // Merge logic: prefer non-null values
+      if (!merged.subject?.name && suggest.subject?.name) merged.subject = suggest.subject;
+      if (!merged.father?.name && suggest.father?.name) merged.father = suggest.father;
+      if (!merged.mother?.name && suggest.mother?.name) merged.mother = suggest.mother;
+      if ((!merged.village || merged.village === 'null') && suggest.village) merged.village = suggest.village;
+      if ((!merged.district || merged.district === 'null') && suggest.district) merged.district = suggest.district;
+      if (!merged.nidNumber && suggest.nidNumber) merged.nidNumber = suggest.nidNumber;
+      if (!merged.house && suggest.house) merged.house = suggest.house;
+    });
+
+    return merged;
+  };
+
   const handleAnalze = async () => {
     if (!input.trim()) return;
     setIsAnalyzing(true);
-    setSuggestion(null);
+    setSuggestions([]);
     setOracleAnswer(null);
 
     if (activeMode === 'dictator') {
       const result = await detectLineage(input);
-      if (result) setSuggestion(result);
+      if (result) setSuggestions([result]);
     } else if (activeMode === 'oracle') {
       // Gather context
       const q = query(collection(db, 'users'), where('isApproved', '==', true), limit(100));
@@ -3479,83 +4381,61 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setIsAnalyzing(true);
-    setSuggestion(null);
+    setSuggestions([]);
+    setDbMatches([]);
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const buffer = reader.result as ArrayBuffer;
-      const result = await analyzeLineageImage(buffer, file.type);
-      setIsAnalyzing(false);
+    const newSuggestions: any[] = [];
+
+    for (const fileObj of files) {
+      const file = fileObj as File;
+      try {
+        const buffer = await file.arrayBuffer();
+        const result = await analyzeLineageImage(buffer, file.type);
+        if (result) newSuggestions.push(result);
+      } catch (err) {
+        console.error("Error analyzing file:", file.name, err);
+      }
+    }
+
+    setIsAnalyzing(false);
+    
+    if (newSuggestions.length > 0) {
+      const merged = mergeSuggestions(newSuggestions);
+      setSuggestions(newSuggestions);
       
-      if (result) {
-        setSuggestion(result);
-        
-        // AUTOMATICALLY Proceed to form if confidence is high
-        if (result.confidence > 0.8) {
-           setTimeout(() => {
-             onResult(result.subject?.name || '', result.father?.name || '', result);
-           }, 2000); // 2 second delay to show the extracted result to the user
-        }
-        
-        // Search for potential database matches to suggest "Root Connection"
-        const matches: any[] = [];
+      // Use the merged data for the final result
+      if (merged.confidence > 0.7) {
+         setTimeout(() => {
+           onResult(merged.subject?.name || '', merged.father?.name || '', merged);
+         }, 2500);
+      }
+      
+      // Search for potential database matches using any of the data
+      const matches: any[] = [];
+      const usersRef = collection(db, 'users');
+      
+      for (const res of newSuggestions) {
         try {
-          const qNames = [];
-          if (result.father?.name) qNames.push(result.father.name);
-          if (result.grandfather?.name) qNames.push(result.grandfather.name);
-          if (result.subject?.name) qNames.push(result.subject.name);
-
-          if (qNames.length > 0) {
-            const usersRef = collection(db, 'users');
-            
-            // Search all approved users (for small-mid scale this is okay, or we can use more targeted queries)
-            // For now, let's stick to field matching but add mother check
-            
-            if (result.father?.name) {
-              const q = query(usersRef, where('displayName', '==', result.father.name));
-              const snap = await getDocs(q);
-              snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'father' }));
-            }
-
-            if (result.mother?.name) {
-              const q = query(usersRef, where('displayName', '==', result.mother.name));
-              const snap = await getDocs(q);
-              snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'mother' }));
-            }
-
-            if (result.grandfather?.name) {
-              const q = query(usersRef, where('displayName', '==', result.grandfather.name));
-              const snap = await getDocs(q);
-              snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'grandfather' }));
-            }
-
-            // Specific Sibling Search: same father and similarity in mother
-            if (result.father?.name || result.mother?.name) {
-               const allUsers = await getDocs(usersRef);
-               allUsers.forEach(d => {
-                 const u = d.data();
-                 if (u.uid === auth.currentUser?.uid) return;
-                 
-                 let fatherScore = u.fatherName ? getSimilarity(u.fatherName, result.father?.name || '') : 0;
-                 let motherScore = u.motherName ? getSimilarity(u.motherName, result.mother?.name || '') : 0;
-                 
-                 if (fatherScore > 0.8 && motherScore > 0.8) {
-                    matches.push({ ...u, matchType: 'sibling' });
-                 }
-               });
-            }
+          if (res.father?.name) {
+            const q = query(usersRef, where('displayName', '==', res.father.name));
+            const snap = await getDocs(q);
+            snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'father' }));
+          }
+          if (res.mother?.name) {
+            const q = query(usersRef, where('displayName', '==', res.mother.name));
+            const snap = await getDocs(q);
+            snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'mother' }));
           }
         } catch (err) {
-          console.error("Error fetching matches:", err);
+          console.error("Fetch match error:", err);
         }
-        setDbMatches(matches);
       }
-    };
-    reader.readAsArrayBuffer(file);
+      setDbMatches(matches);
+    }
   };
 
   const startDictation = () => {
@@ -3581,19 +4461,19 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
       <div className="flex items-center justify-between">
         <div className="flex bg-indigo-100 p-1 rounded-xl">
           <button 
-            onClick={() => { setActiveMode('dictator'); setInput(''); setSuggestion(null); setOracleAnswer(null); }}
+            onClick={() => { setActiveMode('dictator'); setInput(''); setSuggestions([]); setOracleAnswer(null); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'dictator' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
           >
             Dictator
           </button>
           <button 
-            onClick={() => { setActiveMode('oracle'); setInput(''); setSuggestion(null); setOracleAnswer(null); }}
+            onClick={() => { setActiveMode('oracle'); setInput(''); setSuggestions([]); setOracleAnswer(null); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'oracle' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
           >
             Oracle
           </button>
           <button 
-            onClick={() => { setActiveMode('scanner'); setInput(''); setSuggestion(null); setOracleAnswer(null); }}
+            onClick={() => { setActiveMode('scanner'); setInput(''); setSuggestions([]); setOracleAnswer(null); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'scanner' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
           >
             Scanner
@@ -3636,23 +4516,24 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
             ref={fileInputRef} 
             onChange={handleImageUpload} 
             accept="image/*" 
+            multiple
             className="hidden" 
           />
           <Camera className="text-indigo-400 mb-2" size={32} />
-          <p className="text-[10px] font-bold text-indigo-600 uppercase mb-4 text-center">Scan NID, Birth Certificate, Passport<br/>or Hand-written Charts</p>
+          <p className="text-[10px] font-bold text-indigo-600 uppercase mb-4 text-center">Scan NID, Birth Certificate, Passport<br/>or Hand-written Charts (Select Multiple)</p>
           <button 
             onClick={() => fileInputRef.current?.click()}
             disabled={isAnalyzing}
             className="bg-indigo-600 text-white px-6 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
           >
-            {isAnalyzing ? "Scanning Document..." : "Select Document"}
+            {isAnalyzing ? "Scanning Documents..." : "Select Documents"}
           </button>
-          <p className="text-[8px] text-foundation-400 mt-4 uppercase text-center font-bold tracking-widest">Connect with your Root instantly using AI</p>
+          <p className="text-[8px] text-foundation-400 mt-4 uppercase text-center font-bold tracking-widest">Connect with your Root instantly using Multiple Docs</p>
         </div>
       )}
 
       <AnimatePresence>
-        {suggestion && (
+        {suggestions.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -3667,9 +4548,9 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
                   <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">AI Extraction Result</p>
                   <p className="text-xs font-bold text-foundation-900">
                     {activeMode === 'scanner' ? (
-                      suggestion.subject?.name ? `${suggestion.subject.name}'s Identity` : 'Lineage Found'
+                       `${suggestions.length} Document${suggestions.length > 1 ? 's' : ''} Scanned`
                     ) : (
-                      suggestion.childName ? `${suggestion.childName} is son of ${suggestion.fatherName}` : 'Suggestion Found'
+                      suggestions[0].childName ? `${suggestions[0].childName} is son of ${suggestions[0].fatherName}` : 'Suggestion Found'
                     )}
                   </p>
                 </div>
@@ -3679,49 +4560,55 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
             {activeMode === 'scanner' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {suggestion.subject?.name && (
+                  {/* Show Merged Data Preview */}
+                  <div className="col-span-full bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                    <p className="text-[9px] font-black text-indigo-600 uppercase mb-3 flex items-center gap-2">
+                       <Sparkles size={12} /> Merged Profile Preview
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div>
+                         <p className="text-[8px] font-black text-foundation-400 uppercase">Self</p>
+                         <p className="text-xs font-bold text-foundation-900">{mergeSuggestions(suggestions).subject?.name || 'N/A'}</p>
+                       </div>
+                       <div>
+                         <p className="text-[8px] font-black text-foundation-400 uppercase">Father</p>
+                         <p className="text-xs font-bold text-foundation-900">{mergeSuggestions(suggestions).father?.name || 'N/A'}</p>
+                       </div>
+                    </div>
+                  </div>
+
+                  {suggestions.map((s, idx) => (
+                    <div key={idx} className="p-3 bg-foundation-50 rounded-xl border border-foundation-100 relative group">
+                      <div className="absolute -top-2 -right-2 w-5 h-5 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold">
+                        {idx + 1}
+                      </div>
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Doc {idx + 1} Snippet</p>
+                      <p className="text-[10px] font-bold truncate">{s.subject?.name || 'N/A'}</p>
+                      <p className="text-[9px] text-foundation-500 truncate">{s.father?.name || 'Father N/A'}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {mergeSuggestions(suggestions).nidNumber && (
                     <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Subject</p>
-                      <p className="text-xs font-bold">{suggestion.subject.name}</p>
-                      {suggestion.subject.nameBengali && <p className="text-[10px] text-foundation-500">{suggestion.subject.nameBengali}</p>}
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Extracted ID</p>
+                      <p className="text-xs font-bold truncate">{mergeSuggestions(suggestions).nidNumber}</p>
                     </div>
                   )}
-                  {suggestion.father?.name && (
+                  {mergeSuggestions(suggestions).village && (
                     <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Father</p>
-                      <p className="text-xs font-bold">{suggestion.father.name}</p>
-                      {suggestion.father.nameBengali && <p className="text-[10px] text-foundation-500">{suggestion.father.nameBengali}</p>}
-                    </div>
-                  )}
-                  {suggestion.mother?.name && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Mother</p>
-                      <p className="text-xs font-bold">{suggestion.mother.name}</p>
-                      {suggestion.mother.nameBengali && <p className="text-[10px] text-foundation-500">{suggestion.mother.nameBengali}</p>}
-                    </div>
-                  )}
-                  {suggestion.nidNumber && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Document ID / NID</p>
-                      <p className="text-xs font-bold font-mono">{suggestion.nidNumber}</p>
-                    </div>
-                  )}
-                  {suggestion.village && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Village & District</p>
-                      <p className="text-[10px] font-bold">{suggestion.village}, {suggestion.district || 'N/A'}</p>
-                    </div>
-                  )}
-                  {suggestion.house && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">House (বাড়ি)</p>
-                      <p className="text-xs font-bold">{suggestion.house}</p>
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Village/Hous</p>
+                      <p className="text-[10px] font-bold truncate">{mergeSuggestions(suggestions).village}, {mergeSuggestions(suggestions).house || 'N/A'}</p>
                     </div>
                   )}
                 </div>
 
                 <button 
-                  onClick={() => onResult(suggestion.subject?.name || '', suggestion.father?.name || '', suggestion)}
+                  onClick={() => {
+                    const merged = mergeSuggestions(suggestions);
+                    onResult(merged.subject?.name || '', merged.father?.name || '', merged);
+                  }}
                   className="w-full bg-indigo-600 text-white rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                 >
                   <Scan size={14} /> Continue with Registration
@@ -3747,14 +4634,15 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
                            </div>
                            <button 
                              onClick={() => {
+                               const merged = mergeSuggestions(suggestions);
                                if (match.matchType === 'father') {
-                                 onResult(suggestion.subject.name, match.displayName, suggestion);
+                                 onResult(merged.subject?.name || '', match.displayName, merged);
                                } else if (match.matchType === 'sibling') {
                                  if (match.fatherName) {
-                                   onResult(suggestion.subject.name, match.fatherName, suggestion);
+                                   onResult(merged.subject?.name || '', match.fatherName, merged);
                                  }
                                } else {
-                                 onResult(suggestion.father.name, match.displayName, suggestion);
+                                 onResult(merged.father?.name || '', match.displayName, merged);
                                }
                              }}
                              className={`px-4 py-1.5 rounded-lg text-[9px] font-bold transition-all shadow-md ${match.matchType === 'sibling' ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
@@ -3767,9 +4655,9 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
                   </div>
                 )}
                 
-                {suggestion.summary && (
+                {suggestions[0]?.summary && (
                   <div className="p-2 bg-indigo-50 rounded-xl border border-indigo-100 italic text-[9px] text-indigo-700">
-                    AI Note: {suggestion.summary}
+                    AI Note: {suggestions[0].summary}
                   </div>
                 )}
               </div>
@@ -3778,19 +4666,19 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
             {activeMode !== 'scanner' && (
               <>
                 <div className="flex items-center justify-between">
-                  {suggestion.childName && suggestion.fatherName && (
+                  {suggestions[0]?.childName && suggestions[0]?.fatherName && (
                     <button 
-                      onClick={() => onResult(suggestion.childName, suggestion.fatherName)}
+                      onClick={() => onResult(suggestions[0].childName, suggestions[0].fatherName)}
                       className="w-full bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
                     >
                       Connect Father-Son
                     </button>
                   )}
                 </div>
-                {suggestion.lineage && (
+                {suggestions[0]?.lineage && (
                   <div className="space-y-3 relative">
                     <div className="absolute left-[15px] top-4 bottom-4 w-0.5 bg-indigo-100 border-l border-dashed border-indigo-300" />
-                    {suggestion.lineage.map((item: any, idx: number) => (
+                    {suggestions[0].lineage.map((item: any, idx: number) => (
                       <motion.div 
                         key={idx}
                         initial={{ opacity: 0, x: -10 }}
@@ -3806,9 +4694,12 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
                             <p className="text-[7px] font-black text-indigo-400 uppercase tracking-widest">{item.role}</p>
                             <p className="text-[11px] font-bold text-foundation-900">{item.name} {item.nameBengali && <span className="text-foundation-400 font-normal">({item.nameBengali})</span>}</p>
                           </div>
-                          {idx < suggestion.lineage.length - 1 && (
+                          {idx < suggestions[0].lineage.length - 1 && (
                             <button 
-                              onClick={() => onResult(item.name, suggestion.lineage[idx + 1].name, suggestion)}
+                              onClick={() => {
+                                const merged = mergeSuggestions(suggestions);
+                                onResult(item.name, suggestions[0].lineage[idx + 1].name, merged);
+                              }}
                               className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-lg text-[8px] font-black uppercase transition-all shadow-sm border border-indigo-100"
                             >
                               Link Father
@@ -3822,11 +4713,11 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
               </>
             )}
             
-            {activeMode !== 'scanner' && suggestion.grandfatherName && (
+            {activeMode !== 'scanner' && suggestions[0]?.grandfatherName && (
               <div className="flex items-center gap-2 pt-2 border-t border-indigo-50">
                 <GitBranch size={10} className="text-amber-500" />
                 <p className="text-[9px] font-bold text-foundation-500 uppercase">
-                  Grandfather: <span className="text-amber-600">{suggestion.grandfatherName}</span>
+                  Grandfather: <span className="text-amber-600">{suggestions[0].grandfatherName}</span>
                 </p>
               </div>
             )}
@@ -3858,558 +4749,306 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
   );
 }
 
-function FamilyTree({ profile }: { profile: UserProfile | null }) {
-  const [ancestors, setAncestors] = useState<UserProfile[]>([]);
-  const [descendants, setDescendants] = useState<UserProfile[]>([]);
-  const [siblings, setSiblings] = useState<UserProfile[]>([]);
-  const [root, setRoot] = useState<UserProfile | null>(profile);
-  const [treeSearch, setTreeSearch] = useState('');
-  const [preselectedAI, setPreselectedAI] = useState<any>(null);
-  const [treeSearchResults, setTreeSearchResults] = useState<UserProfile[]>([]);
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [zoom, setZoom] = useState(1);
-  const [isAncestorsCollapsed, setIsAncestorsCollapsed] = useState(false);
-  const [isDescendantsCollapsed, setIsDescendantsCollapsed] = useState(false);
+function D3FamilyTree({ data }: { data: any[] }) {
+  const svgRef = useRef<SVGSVGElement>(null);
 
-  const handleAIResult = async (childName: string, fatherName: string, fullSuggestion?: any) => {
-    setTreeSearch(childName);
-    setIsLinking(true);
-    if (fullSuggestion) {
-      setPreselectedAI(fullSuggestion);
-    }
-  };
-  
-  // Linking State
-  const [isLinking, setIsLinking] = useState(false);
-  const [linkingParent, setLinkingParent] = useState<UserProfile | null>(null);
-  const [linkingChild, setLinkingChild] = useState<UserProfile | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  // Tree search logic
   useEffect(() => {
-    if (treeSearch.length > 2) {
+    if (!svgRef.current || !data.length) return;
+
+    // Clear previous
+    d3.select(svgRef.current).selectAll("*").remove();
+
+    const width = 800;
+    const height = 400;
+    const margin = { top: 40, right: 90, bottom: 40, left: 90 };
+
+    const svg = d3.select(svgRef.current)
+      .attr("viewBox", `0 0 ${width} ${height}`)
+      .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const buildHierarchy = (nodes: any[]) => {
+      if (!nodes.length) return null;
+      let rootNode = { ...nodes[0], children: [] as any[] };
+      let current = rootNode;
+      for (let i = 1; i < nodes.length; i++) {
+        const next = { ...nodes[i], children: [] as any[] };
+        current.children.push(next);
+        current = next;
+      }
+      return rootNode;
+    };
+
+    const rootData = buildHierarchy([...data].reverse());
+    if (!rootData) return;
+
+    const root = d3.hierarchy(rootData);
+    const treeLayout = d3.tree().size([height - margin.top - margin.bottom, width - margin.left - margin.right]);
+    treeLayout(root);
+
+    svg.selectAll(".link")
+      .data(root.links())
+      .enter()
+      .append("path")
+      .attr("fill", "none")
+      .attr("stroke", "#6366f1")
+      .attr("stroke-width", 3)
+      .attr("stroke-dasharray", "5,5")
+      .attr("d", d3.linkHorizontal()
+        .x((d: any) => d.y)
+        .y((d: any) => d.x) as any);
+
+    const node = svg.selectAll(".node")
+      .data(root.descendants())
+      .enter()
+      .append("g")
+      .attr("transform", (d: any) => `translate(${d.y},${d.x})`);
+
+    node.append("circle")
+      .attr("r", 20)
+      .attr("fill", (d, i) => d.depth === 0 ? "#1e293b" : "#6366f1")
+      .attr("stroke", "white")
+      .attr("stroke-width", 3);
+
+    node.append("text")
+      .attr("dy", "-1.5em")
+      .attr("text-anchor", "middle")
+      .text((d: any) => d.data.displayName)
+      .attr("font-size", "12px")
+      .attr("font-weight", "800")
+      .attr("fill", "#1e293b");
+
+    node.append("text")
+      .attr("dy", "2.5em")
+      .attr("text-anchor", "middle")
+      .text((d: any) => d.depth === root.height ? "Root" : `Generation ${root.height - d.depth}`)
+      .attr("font-size", "9px")
+      .attr("font-weight", "bold")
+      .attr("fill", "#64748b")
+      .attr("class", "uppercase tracking-tighter");
+
+  }, [data]);
+
+  return (
+    <div className="w-full h-[400px] bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 overflow-auto scrollbar-hide flex items-center justify-center">
+      <svg ref={svgRef} className="w-full md:min-w-[800px] h-full"></svg>
+    </div>
+  );
+}
+
+function FamilyTree({ profile }: { profile: UserProfile | null }) {
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<UserProfile[]>([]);
+  const [selectedMember, setSelectedMember] = useState<UserProfile | null>(profile);
+  const [ancestry, setAncestry] = useState<UserProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  useEffect(() => {
+    if (search.length > 1) {
       const q = query(collection(db, 'users'), where('isApproved', '==', true));
       const unsub = onSnapshot(q, (snap) => {
         const found = snap.docs
           .map(d => d.data() as UserProfile)
-          .filter(u => u.displayName.toLowerCase().includes(treeSearch.toLowerCase()));
-        setTreeSearchResults(found);
+          .filter(u => u.displayName.toLowerCase().includes(search.toLowerCase()));
+        setResults(found);
       });
       return () => unsub();
     } else {
-      setTreeSearchResults([]);
+      setResults([]);
     }
-  }, [treeSearch]);
+  }, [search]);
 
-  // Fetch ancestors (upwards)
   useEffect(() => {
-    if (!root) return;
-    const fetchPath = async () => {
-      let current = root;
-      const path = [];
-      while (current.fatherId) {
+    if (!selectedMember) return;
+    
+    const fetchAncestry = async () => {
+      setIsLoading(true);
+      let current = selectedMember;
+      const path = [current];
+      
+      for (let i = 0; i < 15; i++) {
+        if (!current.fatherId) break;
         const snap = await getDoc(doc(db, 'users', current.fatherId));
         if (snap.exists()) {
           const father = snap.data() as UserProfile;
           path.push(father);
           current = father;
         } else break;
-        if (path.length >= 7) break; // Limit recursion to 7 generations
       }
-      setAncestors(path);
+      setAncestry(path);
+      setIsLoading(false);
+      
+      setIsAiLoading(true);
+      try {
+        const explanation = await explainFamilyTree(path, selectedMember.displayName);
+        setAiExplanation(explanation || 'দুঃখিত, এই মুহূর্তে বংশ পরিচয় বিশ্লেষণ সম্ভব হয়নি।');
+      } catch (err) {
+        setAiExplanation('ত্রুটি ঘটেছে। আবার চেষ্টা করুন।');
+      }
+      setIsAiLoading(false);
     };
-    fetchPath();
-  }, [root]);
 
-  // Fetch descendants (downwards)
-  useEffect(() => {
-    if (!root) return;
-    const q = query(collection(db, 'users'), where('fatherId', '==', root.uid));
-    const unsub = onSnapshot(q, (snap) => {
-      setDescendants(snap.docs.map(d => d.data() as UserProfile));
-    });
-    return () => unsub();
-  }, [root]);
-
-  // Fetch siblings (same father AND mother similarity)
-  useEffect(() => {
-    if (!root || !root.fatherId) {
-      setSiblings([]);
-      return;
-    }
-    const q = query(collection(db, 'users'), where('fatherId', '==', root.fatherId));
-    const unsub = onSnapshot(q, (snap) => {
-      const allSiblings = snap.docs
-        .map(d => d.data() as UserProfile)
-        .filter(u => u.uid !== root.uid); // Exclude self
-      
-      // Filter by mother similarity if motherName exists
-      if (root.motherName) {
-        const filtered = allSiblings.filter(u => {
-          if (!u.motherName) return false;
-          return getSimilarity(root.motherName!, u.motherName) >= 0.8;
-        });
-        setSiblings(filtered);
-      } else {
-        setSiblings(allSiblings);
-      }
-    });
-    return () => unsub();
-  }, [root]);
-
-  const handleCardClick = (target: UserProfile) => {
-    if (isLinking) {
-      if (!linkingParent) {
-        setLinkingParent(target);
-      } else if (linkingParent.uid === target.uid) {
-        setLinkingParent(null);
-      } else if (!linkingChild) {
-        setLinkingChild(target);
-      } else if (linkingChild.uid === target.uid) {
-        setLinkingChild(null);
-      } else {
-        setLinkingChild(target);
-      }
-    } else {
-      setRoot(target);
-    }
-  };
-
-  const confirmLink = async () => {
-    if (!linkingParent || !linkingChild) return;
-    setIsProcessing(true);
-    try {
-      const updateData: any = {
-        fatherId: linkingParent.uid,
-        fatherName: linkingParent.displayName
-      };
-
-      // Use AI extracted data if applicable
-      if (preselectedAI && preselectedAI.mother?.name) {
-        // Check if linkingChild matches extracted subject
-        const matchesSubject = preselectedAI.subject?.name && getSimilarity(linkingChild.displayName, preselectedAI.subject.name) > 0.8;
-        if (matchesSubject) {
-          updateData.motherName = preselectedAI.mother.name;
-        }
-      }
-
-      await updateDoc(doc(db, 'users', linkingChild.uid), updateData);
-      
-      // Update local state if needed
-      if (root?.uid === linkingChild.uid) {
-        setRoot({ ...root, ...updateData });
-      }
-
-      setIsLinking(false);
-      setLinkingParent(null);
-      setLinkingChild(null);
-      setPreselectedAI(null);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${linkingChild.uid}`);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+    fetchAncestry();
+  }, [selectedMember]);
 
   return (
-    <div className="space-y-12 py-8 bg-foundation-50/30 rounded-[3rem] border border-foundation-200/50">
-      <div className="text-center space-y-4">
-        <div className="space-y-2">
-          <div className="flex items-center justify-center gap-3">
-            <h3 className="text-4xl font-display text-foundation-900">Bongsho Tree</h3>
-            <div className="flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-amber-200 uppercase">
-              <Zap size={10} /> Heritage
+    <div className="space-y-8">
+      {/* Hero Search Section */}
+      <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-8 sm:p-12 rounded-[3rem] text-center relative overflow-hidden shadow-2xl border border-white/5">
+        <div className="absolute top-0 right-0 p-8 opacity-10 blur-2xl bg-indigo-500 rounded-full w-64 h-64 -mr-32 -mt-32"></div>
+        <div className="relative z-10 space-y-4">
+          <h3 className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tight">Interactive Lineage Visualizer</h3>
+          <p className="text-indigo-200 text-sm max-w-lg mx-auto leading-relaxed">
+            নাম লিখে সার্চ করুন এবং তাৎক্ষণিকভাবে আপনার বংশের ইতিহাস ও সম্পর্কের বিশ্লেষণ দেখুন।
+          </p>
+          
+          <div className="max-w-xl mx-auto mt-8 relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-indigo-400" />
             </div>
-          </div>
-          <p className="text-foundation-600 text-sm italic">Tracing the patrilineal roots of Hazi Bari descendants</p>
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-wrap items-center justify-center gap-4 px-4">
-          <div className="flex items-center bg-white border border-foundation-200 rounded-full p-1 shadow-sm">
-            <button 
-              onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-              className="p-2 hover:bg-foundation-100 rounded-full text-foundation-600 transition-colors"
-            >
-              <Minus size={14} />
-            </button>
-            <span className="text-[10px] font-bold w-12 text-center text-foundation-900">{Math.round(zoom * 100)}%</span>
-            <button 
-              onClick={() => setZoom(Math.min(1.5, zoom + 0.1))}
-              className="p-2 hover:bg-foundation-100 rounded-full text-foundation-600 transition-colors"
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-          
-          <button 
-            onClick={() => { setZoom(1); }}
-            className="px-3 py-2 bg-white border border-foundation-200 rounded-full text-[10px] font-bold text-foundation-600 hover:bg-foundation-50"
-          >
-            Reset View
-          </button>
-        </div>
-
-        {/* Global Tree Search */}
-        <div className="max-w-xl mx-auto w-full space-y-6">
-          <AIBongshoSuite onResult={handleAIResult} />
-          
-          <div className="flex flex-col items-center gap-4">
-            <div className="max-w-xs w-full relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" size={14} />
-            <input 
-              value={treeSearch}
-              onChange={e => setTreeSearch(e.target.value)}
-              placeholder="Search for any family member..."
-              className="w-full pl-10 pr-4 py-2 bg-white rounded-full border border-foundation-300 text-xs focus:ring-2 focus:ring-foundation-500 focus:outline-none shadow-sm"
+            <input
+              type="text"
+              className="block w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-white placeholder-indigo-300/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
+              placeholder="সদস্যের নাম দিয়ে সার্চ করুন..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
-            {treeSearchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-foundation-300 rounded-xl overflow-hidden shadow-2xl z-50 animate-in fade-in slide-in-from-top-2">
-                {treeSearchResults.map(r => (
-                  <button 
-                    key={r.uid}
-                    onClick={() => {
-                      setRoot(r);
-                      setTreeSearch('');
-                    }}
-                    className="w-full text-left p-3 hover:bg-foundation-200 flex items-center gap-3 transition-colors border-b last:border-none border-foundation-200"
-                  >
-                    <img src={r.photoURL || undefined} className="w-8 h-8 rounded-full" alt="" />
-                    <div>
-                      <p className="text-xs font-bold text-foundation-900">{r.displayName}</p>
-                      <p className="text-[10px] text-foundation-500">{r.houseName}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button 
-            onClick={() => setIsLinking(!isLinking)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all shadow-md ${isLinking ? 'bg-foundation-900 text-white' : 'bg-white text-foundation-600 border border-foundation-300 hover:border-foundation-900'}`}
-          >
-            <GitBranch size={14} />
-            {isLinking ? 'Cancel Linking' : 'Establish Lineage Connection'}
-          </button>
-        </div>
-      </div>
-    </div>
-
-      {isLinking && (
-        <div className="sticky top-0 z-40 bg-foundation-900 text-white p-4 rounded-2xl shadow-2xl animate-in slide-in-from-top-4">
-          <div className="max-w-xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-full ${linkingParent ? 'bg-green-500' : 'bg-foundation-700 font-mono text-[10px]'}`}>
-                {linkingParent ? <CheckCircle2 size={16} /> : '1'}
-              </div>
-              <p className="text-xs">
-                {linkingParent ? <span>Parent: <b>{linkingParent.displayName}</b></span> : 'Select the Parent first'}
-              </p>
-              
-              <div className="h-4 w-px bg-foundation-700 hidden sm:block mx-2"></div>
-              
-              <div className={`p-2 rounded-full ${linkingChild ? 'bg-green-500' : 'bg-foundation-700 font-mono text-[10px]'}`}>
-                {linkingChild ? <CheckCircle2 size={16} /> : '2'}
-              </div>
-              <p className="text-xs">
-                {linkingChild ? <span>Child: <b>{linkingChild.displayName}</b></span> : 'Then select the Child'}
-              </p>
-            </div>
-
-            {linkingParent && linkingChild && (
-              <button 
-                onClick={confirmLink}
-                disabled={isProcessing}
-                className="bg-foundation-100 text-foundation-900 px-6 py-2 rounded-full font-bold text-xs hover:bg-white transition-all flex items-center gap-2"
-              >
-                {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
-                Confirm Connection
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="overflow-visible relative px-4">
-        <motion.div 
-          animate={{ scale: zoom }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-          className="max-w-2xl mx-auto space-y-12 relative origin-top pb-20"
-        >
-          {/* Ancestors */}
-          {ancestors.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex items-center gap-3">
-                  <h4 className="text-center text-[10px] font-bold text-foundation-400 uppercase tracking-[0.3em]">Heritage Roots</h4>
-                  <button 
-                    onClick={() => setIsAncestorsCollapsed(!isAncestorsCollapsed)}
-                    className="text-[8px] font-bold text-foundation-500 uppercase hover:text-foundation-900 bg-foundation-100 px-2 py-0.5 rounded transition-colors"
-                  >
-                    {isAncestorsCollapsed ? 'Show All' : 'Collapse'}
-                  </button>
-                </div>
-                {!isAncestorsCollapsed && (
-                  <div className="flex items-center gap-2 bg-amber-50 px-3 py-1 rounded-full border border-amber-100">
-                    <span className="text-[8px] font-bold text-amber-900 uppercase">{ancestors.length} Patrilineal Levels</span>
-                    <div className="w-1 h-1 bg-amber-300 rounded-full" />
-                    <span className="text-[8px] text-amber-600 uppercase">Tracing back to {ancestors[ancestors.length-1].displayName}</span>
-                  </div>
-                )}
-              </div>
-              
-              {!isAncestorsCollapsed && (
-                <div className="flex flex-col-reverse items-center">
-                  {ancestors.map((anc, i) => (
-                    <React.Fragment key={anc.uid}>
-                      <div className="flex flex-col items-center group/anc hover:scale-105 transition-transform z-10">
-                        <span className="text-[8px] font-mono font-bold text-foundation-400 mb-1 uppercase tracking-tighter opacity-0 group-hover/anc:opacity-100 transition-opacity">
-                          {i === 0 ? 'Father' : 
-                           i === 1 ? 'Grandfather' : 
-                           i === 2 ? 'Great Grandfather' :
-                           `${i + 1}th Generation Ancestor`}
-                        </span>
+            
+            <AnimatePresence>
+              {results.length > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="absolute top-full left-0 right-0 mt-3 bg-white rounded-2xl overflow-hidden shadow-2xl z-50 divide-y divide-slate-100 max-h-64 overflow-y-auto"
+                >
+                  {results.map(member => (
+                    <button
+                      key={member.uid}
+                      onClick={() => {
+                        setSelectedMember(member);
+                        setSearch('');
+                        setResults([]);
+                      }}
+                      className="w-full text-left px-5 py-4 hover:bg-slate-50 transition-colors flex items-center justify-between group"
+                    >
+                      <div className="flex items-center gap-4">
                         <div className="relative">
-                          <TreeCard 
-                            user={anc} 
-                            onRoot={() => handleCardClick(anc)} 
-                            isSelected={linkingParent?.uid === anc.uid || linkingChild?.uid === anc.uid}
-                            selectionType={linkingParent?.uid === anc.uid ? 'parent' : linkingChild?.uid === anc.uid ? 'child' : undefined}
+                          <img 
+                            src={member.photoURL || `https://ui-avatars.com/api/?name=${member.displayName}`} 
+                            className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-100 group-hover:ring-indigo-100 transition-all" 
+                            alt="" 
                           />
                         </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{member.displayName}</p>
+                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Father: {member.fatherName}</p>
+                        </div>
                       </div>
-                      <div className="h-10 w-1 bg-gradient-to-b from-amber-200 via-amber-400 to-foundation-900/10 opacity-40 last:hidden relative">
-                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-amber-400 rounded-full border-2 border-white shadow-sm" />
-                      </div>
-                    </React.Fragment>
+                      <ArrowRight size={18} className="text-slate-300 group-hover:text-indigo-600 transition-colors group-hover:translate-x-1 duration-300" />
+                    </button>
                   ))}
-                  {ancestors.length > 0 && (
-                    <div className="flex flex-col items-center">
-                       <div className="w-2 h-2 bg-amber-400 rounded-full mb-1 ring-2 ring-amber-100" />
-                       <div className="h-4 w-1 bg-amber-400 opacity-20" />
-                    </div>
-                  )}
-                </div>
+                </motion.div>
               )}
-            </div>
-          )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
 
-          {/* Selected Pivot & Siblings */}
-          <div className="flex flex-col items-center gap-8">
-            <div className="flex items-center justify-center gap-12 sm:gap-24">
-              {/* Siblings Left */}
-              {siblings.length > 0 && (
-                <div className="flex flex-col items-end gap-4">
-                  <h4 className="text-[8px] font-black text-foundation-400 uppercase tracking-widest mr-2">Siblings</h4>
-                  <div className="flex flex-col gap-3">
-                    {siblings.slice(0, Math.ceil(siblings.length/2)).map(sib => (
-                      <div key={sib.uid} className="relative">
-                        <div className="absolute top-1/2 -right-4 w-4 h-0.5 bg-foundation-200" />
-                        <TreeCard small user={sib} type="sibling" onRoot={() => handleCardClick(sib)} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-col items-center">
-                {ancestors.length > 0 && !isAncestorsCollapsed && <div className="h-10 w-1 bg-foundation-400 mb-2 opacity-50 relative">
-                   <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-foundation-400 rounded-full border-2 border-white" />
-                </div>}
-                <div className="bg-foundation-900 p-1.5 rounded-[2rem] shadow-2xl scale-110 relative z-10 border-4 border-white">
-                  <div className="absolute -top-3 -right-3 bg-amber-500 text-white p-1.5 rounded-full shadow-lg animate-bounce z-20">
-                    <Sparkles size={12} />
-                  </div>
-                  <TreeCard 
-                    user={root!} 
-                    isPivot 
-                    onRoot={() => handleCardClick(root!)} 
-                    isSelected={linkingParent?.uid === root?.uid || linkingChild?.uid === root?.uid}
-                    selectionType={linkingParent?.uid === root?.uid ? 'parent' : linkingChild?.uid === root?.uid ? 'child' : undefined}
+      {selectedMember && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-8"
+        >
+          {/* Main Visualization Card */}
+          <div className="bg-white p-8 sm:p-10 rounded-[3rem] border border-slate-200 shadow-xl shadow-slate-100 relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10 pb-8 border-b border-slate-100">
+              <div className="flex items-center gap-6">
+                <div className="relative">
+                  <img 
+                    src={selectedMember.photoURL || `https://ui-avatars.com/api/?name=${selectedMember.displayName}`} 
+                    className="w-20 h-20 rounded-3xl object-cover shadow-lg border-2 border-white" 
+                    alt="" 
                   />
+                  <div className="absolute -bottom-2 -right-2 bg-indigo-600 text-white p-2 rounded-xl shadow-xl border-2 border-white">
+                    <Fingerprint size={16} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-2xl font-display font-bold text-slate-900 tracking-tight">{selectedMember.displayName}</h4>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span> 
+                    Root Member Profile
+                  </p>
                 </div>
               </div>
-
-              {/* Siblings Right */}
-              {siblings.length > Math.ceil(siblings.length/2) && (
-                <div className="flex flex-col items-start gap-4">
-                  <h4 className="text-[8px] font-black text-foundation-400 uppercase tracking-widest ml-2">Siblings</h4>
-                  <div className="flex flex-col gap-3">
-                    {siblings.slice(Math.ceil(siblings.length/2)).map(sib => (
-                      <div key={sib.uid} className="relative">
-                        <div className="absolute top-1/2 -left-4 w-4 h-0.5 bg-foundation-200" />
-                        <TreeCard small user={sib} type="sibling" onRoot={() => handleCardClick(sib)} />
-                      </div>
-                    ))}
-                  </div>
+              
+              <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                  <GitBranch size={24} />
                 </div>
-              )}
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Generations</p>
+                  <p className="text-xl font-display font-bold text-slate-900 leading-tight">{ancestry.length} Traceable</p>
+                </div>
+              </div>
             </div>
 
-            {descendants.length > 0 && !isDescendantsCollapsed && <div className="h-14 w-1 bg-foundation-400 mt-4 opacity-50 relative">
-               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-foundation-400 rounded-full border-2 border-white" />
-            </div>}
+            {isLoading ? (
+              <div className="h-[400px] flex items-center justify-center bg-slate-50/50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="relative">
+                    <div className="w-12 h-12 border-4 border-indigo-600/30 rounded-full" />
+                    <div className="absolute inset-0 w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                  <p className="text-sm text-slate-400 font-bold uppercase tracking-[0.2em] animate-pulse">Building Tree</p>
+                </div>
+              </div>
+            ) : (
+              <D3FamilyTree data={ancestry} />
+            )}
           </div>
 
-          {/* Descendants */}
-          {descendants.length > 0 && (
-            <div className="space-y-6">
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex items-center gap-3">
-                  <h4 className="text-center text-[10px] font-bold text-foundation-400 uppercase tracking-[0.3em]">Legacy Progeny</h4>
-                  <button 
-                    onClick={() => setIsDescendantsCollapsed(!isDescendantsCollapsed)}
-                    className="text-[8px] font-bold text-foundation-500 uppercase hover:text-foundation-900 bg-foundation-100 px-2 py-0.5 rounded transition-colors"
-                  >
-                    {isDescendantsCollapsed ? 'Expand' : 'Collapse'}
-                  </button>
+          {/* AI Analysis Card */}
+          <div className="bg-indigo-900 rounded-[3.5rem] p-4 shadow-2xl relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
+             <div className="bg-white rounded-[2.5rem] p-10 relative z-10 border border-white/20">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-200">
+                    <Sparkles size={28} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-2xl font-display font-bold text-slate-900">বংশালিপি বিশ্লেষণ (AI)</h4>
+                    <p className="text-xs text-slate-400 font-medium italic">Powered by Gemini Intelligent Genealogy Engine</p>
+                  </div>
                 </div>
-              </div>
-              {!isDescendantsCollapsed && (
-                <div className="relative pt-12">
-                   {/* Connection Bar for Descendants */}
-                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-foundation-300 to-transparent opacity-40"></div>
-                   
-                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 relative">
-                     {/* SVG Tree Connectors for Descendants */}
-                     <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible opacity-30" style={{ top: '-36px' }}>
-                       <defs>
-                         <linearGradient id="tree-branch-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                           <stop offset="0%" stopColor="#0f172a" />
-                           <stop offset="100%" stopColor="#94a3b8" />
-                         </linearGradient>
-                       </defs>
-                       <path 
-                         d={`M ${50}% 0 L ${50}% 30`} 
-                         fill="none" 
-                         stroke="url(#tree-branch-grad)" 
-                         strokeWidth="1.5" 
-                         className="hidden sm:block"
-                       />
-                       <path 
-                         d={`M ${50}% 30 C ${50}% 30, 16.6% 30, 16.6% 45`} 
-                         fill="none" 
-                         stroke="url(#tree-branch-grad)" 
-                         strokeWidth="1.5" 
-                         className="hidden sm:block"
-                       />
-                       <path 
-                         d={`M ${50}% 30 C ${50}% 30, 83.3% 30, 83.3% 45`} 
-                         fill="none" 
-                         stroke="url(#tree-branch-grad)" 
-                         strokeWidth="1.5" 
-                         className="hidden sm:block"
-                       />
-                     </svg>
-                     
-                     {descendants.map(desc => (
-                       <div key={desc.uid} className="flex flex-col items-center group/desc scroll-mt-20 relative z-10">
-                         <div className="h-6 w-1 bg-foundation-300 opacity-40 mb-2 sm:hidden" />
-                         <div className="h-4 w-1 bg-foundation-300 opacity-30 mb-2 hidden sm:block" />
-                         <TreeCard 
-                           user={desc} 
-                           small 
-                           onRoot={() => handleCardClick(desc)} 
-                           isSelected={linkingParent?.uid === desc.uid || linkingChild?.uid === desc.uid}
-                           selectionType={linkingParent?.uid === desc.uid ? 'parent' : linkingChild?.uid === desc.uid ? 'child' : undefined}
-                         />
-                       </div>
-                     ))}
-                     {descendants.length === 0 && (
-                       <div className="col-span-full py-12 flex flex-col items-center gap-3 bg-white/30 rounded-3xl border border-dashed border-foundation-300">
-                         <Users className="text-foundation-300" size={32} />
-                         <p className="text-[10px] text-foundation-400 font-bold uppercase tracking-widest">No Descendants Recorded</p>
-                       </div>
-                     )}
-                   </div>
+
+                <div className="relative">
+                  <div className="absolute left-0 top-0 w-1 h-full bg-slate-100 rounded-full"></div>
+                  <div className="pl-8">
+                    {isAiLoading ? (
+                      <div className="space-y-6">
+                        <div className="h-6 bg-slate-100 rounded-xl animate-pulse w-3/4" />
+                        <div className="h-6 bg-slate-100 rounded-xl animate-pulse w-full" />
+                        <div className="h-6 bg-slate-100 rounded-xl animate-pulse w-2/3" />
+                      </div>
+                    ) : (
+                      <div className="text-slate-700 text-lg leading-[1.8] space-y-6 font-medium">
+                        <p className="whitespace-pre-line bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent">
+                          {aiExplanation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
-          
-          {/* Help Tooltip */}
-          <div className="max-w-xs mx-auto text-center mt-12">
-            <p className="text-[10px] text-foundation-400 font-medium bg-white/50 backdrop-blur-sm p-3 rounded-2xl border border-foundation-200">
-              💡 <span className="font-bold">Pro Tip:</span> Click any card to set it as the center of the tree and explore their specific lineage. Use the zoom controls above to navigate larger trees.
-            </p>
+             </div>
           </div>
         </motion.div>
-      </div>
-      
-      <div className="bg-white/50 p-6 rounded-2xl border border-foundation-300 max-w-lg mx-auto text-center space-y-4">
-        <div className="w-12 h-12 bg-foundation-300 rounded-full mx-auto grid place-items-center">
-          <Network size={24} className="text-foundation-600" />
-        </div>
-        <p className="text-xs text-foundation-600 leading-relaxed">
-          The family tree grows as members link their profiles. You can click on any ancestor or descendant box to shift the tree view to that person.
-        </p>
-        {root?.uid !== profile?.uid && (
-          <button onClick={() => setRoot(profile)} className="text-xs font-bold text-foundation-900 underline">Reset to my tree</button>
-        )}
-      </div>
+      )}
     </div>
-  );
-}
-
-function TreeCard({ user, onRoot, isPivot, small, isSelected, selectionType, type }: { key?: any, user: UserProfile, onRoot: () => void, isPivot?: boolean, small?: boolean, isSelected?: boolean, selectionType?: 'parent' | 'child', type?: 'sibling' | 'father' | 'grandfather' }) {
-  return (
-    <motion.button 
-      initial={{ opacity: 0, scale: 0.9, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      whileHover={{ y: -5, transition: { duration: 0.2 } }}
-      onClick={onRoot}
-      className={`
-        bg-white border rounded-[1.5rem] p-3 flex flex-col items-center gap-2 transition-all group relative
-        ${isPivot ? 'border-foundation-900 w-52 shadow-2xl ring-4 ring-foundation-50' : 'border-foundation-200 hover:border-foundation-400 w-44 shadow-sm'}
-        ${small ? 'scale-90 opacity-90 w-36 py-2' : ''}
-        ${isSelected ? 'ring-4 ring-offset-2 scale-105 z-20 ' + (selectionType === 'parent' ? 'ring-green-500 shadow-green-200' : 'ring-blue-500 shadow-blue-200') : ''}
-      `}
-    >
-      <div className={`absolute -top-3 -left-2 px-2 py-0.5 rounded-full text-[8px] font-bold border shadow-sm ${isPivot ? 'bg-foundation-900 text-white border-foundation-900' : 'bg-foundation-50 text-foundation-500 border-foundation-200'}`}>
-        {isPivot ? 'Current View' : user.houseName}
-      </div>
-
-      {type === 'sibling' && (
-        <div className="absolute -top-3 -right-2 px-2 py-0.5 rounded-full text-[8px] font-black bg-amber-500 text-white border border-amber-600 shadow-sm z-30">
-          সহোদর
-        </div>
-      )}
-
-      {isSelected && (
-        <div className={`absolute -top-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[8px] font-black text-white shadow-lg animate-bounce ${selectionType === 'parent' ? 'bg-green-600' : 'bg-blue-600'}`}>
-          {selectionType === 'parent' ? 'SELECTING AS FATHER' : 'SELECTING AS CHILD'}
-        </div>
-      )}
-
-      <div className="relative">
-        <img 
-          src={user.photoURL || undefined} 
-          className={`rounded-[1.2rem] border-2 border-foundation-100 group-hover:border-foundation-300 transition-all object-cover ${small ? 'w-12 h-12' : 'w-16 h-16'}`} 
-          alt="" 
-        />
-        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center border border-foundation-200 shadow-sm">
-          <div className={`w-2 h-2 rounded-full ${user.role === 'admin' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-        </div>
-      </div>
-
-      <div className="text-center w-full overflow-hidden">
-        <h5 className={`font-bold text-foundation-900 truncate px-1 ${small ? 'text-[10px]' : 'text-xs'}`}>{user.displayName}</h5>
-        {!small && (
-          <div className="flex items-center justify-center gap-1 mt-1 opacity-70">
-            <MapPin size={8} className="text-foundation-400" />
-            <p className="text-[8px] text-foundation-500 uppercase tracking-tighter truncate">{user.houseName || 'Hazi Bari'}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Hover Reveal Action */}
-      <div className="absolute inset-0 bg-foundation-900/5 rounded-[1.5rem] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-        <div className="bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm border border-foundation-200 translate-y-2 group-hover:translate-y-0 transition-transform">
-          <p className="text-[8px] font-bold text-foundation-900 uppercase">Focus Tree</p>
-        </div>
-      </div>
-    </motion.button>
   );
 }
 
@@ -5044,9 +5683,45 @@ function Messenger({ profile, onStartCall }: { profile: UserProfile | null, onSt
   const [showMediaMenu, setShowMediaMenu] = useState(false);
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [showConvMenu, setShowConvMenu] = useState(false);
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<Message | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showNewChat && searchQuery.trim().length >= 2) {
+      const fetchSearch = async () => {
+        setIsSearching(true);
+        try {
+          const q = query(
+            collection(db, 'users'),
+            where('email', '!=', ''), // Critical: Only users with email
+            limit(50)
+          );
+          const snap = await getDocs(q);
+          const filtered = snap.docs
+            .map(d => d.data() as UserProfile)
+            .filter(u => 
+              u.uid !== profile?.uid && 
+              (u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+               u.email.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+          setSearchResults(filtered);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setIsSearching(false);
+        }
+      };
+      const timer = setTimeout(fetchSearch, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchQuery, showNewChat, profile?.uid]);
 
   const { isRecording, startRecording, stopRecording, cancelRecording, audioBlob, recordingTime } = useAudioRecorder();
 
@@ -5176,13 +5851,21 @@ function Messenger({ profile, onStartCall }: { profile: UserProfile | null, onSt
              </div>
              <h3 className="font-display font-black text-foundation-900 text-lg uppercase tracking-wider italic">Chats</h3>
           </div>
-          <div className="relative">
+          <div className="flex items-center gap-2">
             <button 
-              onClick={() => setShowChatSettings(!showChatSettings)}
-              className={`p-2 rounded-full transition-all ${showChatSettings ? 'bg-snap-yellow text-foundation-900 shadow-lg' : 'bg-foundation-100 hover:bg-snap-yellow'}`}
+              onClick={() => setShowNewChat(true)}
+              className="p-2 bg-snap-blue text-white rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all"
+              title="New Chat"
             >
-               <MoreHorizontal size={20} />
+              <Plus size={20} />
             </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowChatSettings(!showChatSettings)}
+                className={`p-2 rounded-full transition-all ${showChatSettings ? 'bg-snap-yellow text-foundation-900 shadow-lg' : 'bg-foundation-100 hover:bg-snap-yellow'}`}
+              >
+                 <MoreHorizontal size={20} />
+              </button>
             <AnimatePresence>
               {showChatSettings && (
                 <>
@@ -5222,7 +5905,74 @@ function Messenger({ profile, onStartCall }: { profile: UserProfile | null, onSt
             </AnimatePresence>
           </div>
         </div>
+      </div>
         
+      <AnimatePresence>
+          {showNewChat && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="p-4 border-b border-foundation-200 bg-white space-y-4"
+            >
+              <div className="flex justify-between items-center px-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-foundation-400">New Chat with Email User</p>
+                <button onClick={() => setShowNewChat(false)}><X size={16} className="text-foundation-400" /></button>
+              </div>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" />
+                <input 
+                  type="text" 
+                  autoFocus
+                  placeholder="Search members by email..." 
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full bg-foundation-50 rounded-xl py-2 pl-9 pr-4 text-xs focus:ring-2 focus:ring-snap-blue outline-none border border-foundation-100 font-bold"
+                />
+              </div>
+              
+              <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
+                {isSearching && (
+                  <div className="p-4 text-center">
+                    <Loader2 size={16} className="animate-spin mx-auto text-foundation-400" />
+                  </div>
+                )}
+                {!isSearching && searchQuery.length >= 2 && searchResults.length === 0 && (
+                   <p className="text-[10px] text-center text-foundation-400 py-4 uppercase font-black tracking-widest">No verified member found</p>
+                )}
+                {searchResults.map(user => (
+                   <button 
+                     key={user.uid}
+                     onClick={async () => {
+                       const convId = profile.uid < user.uid ? `${profile.uid}_${user.uid}` : `${user.uid}_${profile.uid}`;
+                       const snap = await getDoc(doc(db, 'conversations', convId));
+                       if (!snap.exists()) {
+                         await setDoc(doc(db, 'conversations', convId), {
+                           participants: [profile.uid, user.uid],
+                           participantDetails: {
+                             [profile.uid]: { displayName: profile.displayName, photoURL: profile.photoURL || '' },
+                             [user.uid]: { displayName: user.displayName, photoURL: user.photoURL || '' }
+                           },
+                           updatedAt: serverTimestamp()
+                         });
+                       }
+                       setShowNewChat(false);
+                       setSearchQuery('');
+                     }}
+                     className="w-full flex items-center gap-3 p-2 hover:bg-foundation-50 rounded-xl transition-colors text-left"
+                   >
+                     <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} className="w-8 h-8 rounded-lg object-cover" alt="" />
+                     <div className="min-w-0">
+                       <p className="text-xs font-black text-foundation-900 truncate">{user.displayName}</p>
+                       <p className="text-[9px] text-foundation-400 truncate tracking-tight">{user.email}</p>
+                     </div>
+                   </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
           {conversations.length === 0 && (
             <div className="p-12 text-center">
