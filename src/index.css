@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&family=JetBrains+Mono:wght@400&family=Hind+Siliguri:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Hind Siliguri", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Playfair Display", serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-foundation-900: #2d1b14;
+  --color-foundation-800: #3d261c;
+  --color-foundation-700: #5a3c2e;
+  --color-foundation-600: #8b5e3c;
+  --color-foundation-500: #b88a44;
+  --color-foundation-400: #d4a373;
+  --color-foundation-300: #fefae0;
+  --color-foundation-200: #faf9f6;
+
+  --color-snap-yellow: #FFFC00;
+  --color-snap-blue: #00AEF0;
+  --color-snap-purple: #9B55A0;
+}
+
+@layer base {
+  body {
+    @apply bg-foundation-200 text-foundation-900 font-sans;
+  }
+
+  /* Rich Text Editor Styles */
+  .rich-text-editor .ql-container.ql-snow {
+    @apply border-none text-sm;
+    font-family: inherit;
+  }
+  .rich-text-editor .ql-toolbar.ql-snow {
+    @apply border-none border-b border-foundation-200 bg-white/50;
+  }
+  .rich-text-editor .ql-editor {
+    @apply min-h-[120px] p-4;
+  }
+  .rich-text-editor .ql-editor.ql-blank::before {
+    @apply text-foundation-400 italic;
+  }
+
+  /* Rich Text Content Rendering */
+  .rich-text-content b, .rich-text-content strong {
+    @apply font-bold;
+  }
+  .rich-text-content i, .rich-text-content em {
+    @apply italic;
+  }
+  .rich-text-content ul {
+    @apply list-disc ml-5 mb-4 space-y-1;
+  }
+  .rich-text-content ol {
+    @apply list-decimal ml-5 mb-4 space-y-1;
+  }
+  .rich-text-content p {
+    @apply mb-2 last:mb-0;
+  }
+}

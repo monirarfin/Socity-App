@@ -1,0 +1,202 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Family member profile for Hazi Bari Foundation",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "houseName": { "type": "string" },
+        "houseSegment": { "type": "string" },
+        "familyHead": { "type": "string" },
+        "mobile": { "type": "string" },
+        "familyIncome": { "type": "number" },
+        "studentCount": { "type": "number" },
+        "publicExamineeCount": { "type": "number" },
+        "fatherId": { "type": "string" },
+        "role": { "type": "string", "enum": ["member", "admin", "collector", "director"] },
+        "isApproved": { "type": "boolean" },
+        "isPublicContribution": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "houseName"]
+    },
+    "Post": {
+      "title": "Family Post",
+      "description": "Announcements, news, and project updates for the family",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhotoURL": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["news", "event", "project", "help"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likes": { "type": "array", "items": { "type": "string" } },
+        "commentCount": { "type": "number" },
+        "projectStartDate": { "type": "string" },
+        "projectEndDate": { "type": "string" },
+        "projectBudget": { "type": "number" },
+        "projectSummary": { "type": "string" },
+        "projectProgress": { "type": "number" },
+        "projectStatusUpdate": { "type": "string" },
+        "projectBudgetBreakdown": { 
+          "type": "array", 
+          "items": { 
+            "type": "object", 
+            "properties": {
+              "item": { "type": "string" },
+              "amount": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["authorId", "content", "type"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "A private chat between two users",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "participantDetails": { "type": "object" },
+        "lastMessage": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participants", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A single chat message",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "senderId", "content", "createdAt"]
+    },
+    "Comment": {
+      "title": "Post Comment",
+      "description": "Social interaction on posts",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhotoURL": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "authorId", "content"]
+    },
+    "Contribution": {
+      "title": "Project Contribution",
+      "description": "Financial contribution for a specific project",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhotoURL": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["bkash", "nagad", "bank", "cash"] },
+        "transactionId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved"] },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "amount", "method", "transactionId", "status"]
+    },
+    "Notification": {
+      "title": "System Notification",
+      "description": "Alerts for admins (e.g., new registration approvals)",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["registration"] },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhotoURL": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "userId", "message", "read"]
+    },
+    "Subscription": {
+      "title": "Monthly Subscription",
+      "description": "Monthly fee payment records (100 BDT)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "month": { "type": "string" },
+        "year": { "type": "number" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "pending"] },
+        "collectedById": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "month", "year", "amount"]
+    },
+    "Call": {
+      "title": "Call Signaling",
+      "description": "WebRTC signaling for voice and video calls",
+      "type": "object",
+      "properties": {
+        "callerId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "type": { "type": "string", "enum": ["voice", "video"] },
+        "status": { "type": "string", "enum": ["ringing", "accepted", "rejected", "ended", "missed"] },
+        "offer": { "type": "object" },
+        "answer": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "endedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["callerId", "receiverId", "type", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "Collection of family member profiles"
+    },
+    "posts": {
+      "schema": "Post",
+      "description": "Collection of social feed posts"
+    },
+    "comments": {
+      "schema": "Comment",
+      "description": "Global comments collection for simplicity or subcollection later"
+    },
+    "contributions": {
+      "schema": "Contribution",
+      "description": "Project-specific financial contributions from members"
+    },
+    "conversations": {
+      "schema": "Conversation",
+      "description": "Private chat sessions between family members"
+    },
+    "messages": {
+      "schema": "Message",
+      "description": "Individual chat messages within a conversation"
+    },
+    "notifications": {
+      "schema": "Notification",
+      "description": "System alerts primarily for admin users"
+    },
+    "subscriptions": {
+      "schema": "Subscription",
+      "description": "Fee payment records tracking monthly contributions"
+    },
+    "calls": {
+      "schema": "Call",
+      "description": "Active and past call sessions for WebRTC signaling"
+    }
+  }
+}

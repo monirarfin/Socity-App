@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function isAdmin() { 
+      return request.auth != null && (
+        (request.auth.token.email == 'mdmonirahamedarfin@gmail.com' && request.auth.token.email_verified == true) || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'director'])
+      );
+    }
+    function isApproved() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true;
+    }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Entity Validations ---
+    function isValidUser(data) {
+      return data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() < 100
+        && data.email is string && data.email.size() < 100
+        && (data.get('houseName', null) == null || (data.houseName is string && data.houseName.size() < 200))
+        && (data.role == 'member' || isAdmin())
+        && (data.isApproved == false || isAdmin()); // Prevent self-approval
+    }
+
+    function isValidPost(data) {
+      return data.authorId == request.auth.uid
+        && data.content is string && data.content.size() < 10000
+        && data.type in ['news', 'event', 'project', 'help']
+        && data.createdAt == request.time
+        && (data.get('authorName', null) == null || data.authorName is string)
+        && (data.get('authorPhotoURL', null) == null || data.authorPhotoURL is string)
+        && (data.get('audioUrl', null) == null || data.audioUrl is string)
+        && (data.get('imageUrl', null) == null || data.imageUrl is string)
+        && (data.get('blocks', null) == null || data.blocks is list)
+        && (data.get('projectStartDate', null) == null || data.projectStartDate is string)
+        && (data.get('projectEndDate', null) == null || data.projectEndDate is string)
+        && (data.get('projectBudget', null) == null || data.projectBudget is number)
+        && (data.get('projectSummary', null) == null || data.projectSummary is string)
+        && (data.get('projectProgress', null) == null || (data.projectProgress is number && data.projectProgress >= 0 && data.projectProgress <= 100))
+        && (data.get('projectStatusUpdate', null) == null || data.projectStatusUpdate is string)
+        && (data.get('projectBudgetBreakdown', null) == null || data.projectBudgetBreakdown is list)
+        && (data.get('likes', null) == null || data.likes is list)
+        && (data.get('commentCount', null) == null || data.commentCount is number);
+    }
+
+    function isValidComment(data) {
+      return data.authorId == request.auth.uid
+        && data.content is string && data.content.size() < 2000
+        && data.postId is string
+        && data.createdAt == request.time
+        && (data.get('parentId', null) == null || data.parentId is string)
+        && (data.get('audioUrl', null) == null || data.audioUrl is string)
+        && (data.get('authorName', null) == null || data.authorName is string)
+        && (data.get('authorPhotoURL', null) == null || data.authorPhotoURL is string);
+    }
+
+    function isValidContribution(data) {
+      return data.userId == request.auth.uid
+        && data.amount is number && data.amount > 0
+        && data.postId is string
+        && data.method in ['bkash', 'nagad', 'bank', 'cash']
+        && data.transactionId is string && data.transactionId.size() < 100
+        && data.status == 'pending'
+        && (data.get('isPublic', null) == null || data.isPublic is bool);
+    }
+
+    function isValidSubscription(data) {
+      return data.amount is number && data.amount >= 0
+        && data.month is string && data.year is number;
+    }
+
+    function isValidConversation(data) {
+      return data.participants is list && data.participants.size() >= 2
+        && request.auth.uid in data.participants;
+    }
+
+    function isValidMessage(data) {
+      return data.senderId == request.auth.uid
+        && data.content is string && data.content.size() < 5000 // Increased for richness
+        && data.conversationId is string
+        && data.createdAt == request.time;
+    }
+
+    function isValidCall(data) {
+      return data.callerId == request.auth.uid
+        && data.receiverId is string && data.receiverId.size() < 128
+        && data.type in ['voice', 'video']
+        && data.status in ['ringing', 'accepted', 'rejected', 'ended', 'missed']
+        && data.createdAt == request.time;
+    }
+
+    // --- Collections ---
+
+    // Calls
+    match /calls/{callId} {
+      allow read: if isSignedIn() && (resource.data.callerId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isSignedIn() && isValidCall(incoming());
+      allow update: if isSignedIn() && (resource.data.callerId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Conversations
+    match /conversations/{convId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn() && isValidConversation(incoming());
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants && isValidConversation(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Messages
+    match /messages/{messageId} {
+      allow read: if isSignedIn() && get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants.hasAny([request.auth.uid]);
+      allow create: if isSignedIn() && isValidMessage(incoming()) && get(/databases/$(database)/documents/conversations/$(incoming().conversationId)).data.participants.hasAny([request.auth.uid]);
+      allow delete: if isAdmin();
+    }
+
+    // Users
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isApproved() || isAdmin();
+      allow create: if isSignedIn() && isValidUser(incoming());
+      allow update: if (isOwner(userId) && isValidUser(incoming()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'fatherName', 'fatherId', 'houseName', 'houseSegment', 'familyHead', 'mobile', 'familyIncome', 'studentCount', 'publicExamineeCount', 'isPublicContribution']))
+                    || (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isApproved']));
+      allow delete: if isAdmin();
+    }
+
+    // Posts
+    match /posts/{postId} {
+      allow read: if isApproved() || isAdmin();
+      allow create: if (isApproved() || isAdmin()) && isValidPost(incoming());
+      allow update: if (isOwner(existing().authorId) && isValidPost(incoming())) 
+                    || ((isApproved() || isAdmin()) && (incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'commentCount'])))
+                    || isAdmin();
+      allow delete: if (isOwner(existing().authorId)) || isAdmin();
+    }
+
+    // Comments
+    match /comments/{commentId} {
+      allow read: if isApproved() || isAdmin();
+      allow create: if (isApproved() || isAdmin()) && isValidComment(incoming());
+      allow update: if isOwner(existing().authorId) || isAdmin();
+      allow delete: if isOwner(existing().authorId) 
+                    || isAdmin() 
+                    || isOwner(get(/databases/$(database)/documents/posts/$(existing().postId)).data.authorId);
+    }
+
+    // Contributions
+    match /contributions/{contribId} {
+      allow read: if isApproved() || isAdmin();
+      allow create: if isApproved() && isValidContribution(incoming());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notifId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn(); // Allow users to trigger registration alerts
+      allow update, delete: if isAdmin();
+    }
+
+    // Subscriptions
+    match /subscriptions/{subId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAdmin() || (isSignedIn() && incoming().userId == request.auth.uid); // members report maybe? no, usually admin
+      allow update, delete: if isAdmin();
+    }
+  }
+}
