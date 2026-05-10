@@ -250,7 +250,7 @@ export async function explainFamilyTree(
         OUTPUT FORMAT:
         - If explaining: Return raw Bengali text.
         - If collecting info: Return helpful Bengali text asking for the next field.
-        - IF ALL INFO IS COLLECTED: Add a final line "---RECORD_READY---" followed by a JSON block of the user data.
+        - IF ALL INFO IS COLLECTED: Add a final line "---RECORD_READY---" followed BY ONLY THE JSON block of the user data. Do NOT include any markdown code blocks (\`\`\`json) inside the record part. Ensure the JSON is a single line or well-formatted block and comes immediately after the marker.
 
         Example for registration: "চমৎকার! আমি বংশের নতুন সদস্য হিসেবে ${subjectName} এর প্রোফাইল তৈরিতে সাহায্য করছি। উনার পিতার নাম কি?"
 
@@ -264,6 +264,44 @@ export async function explainFamilyTree(
   } catch (error) {
     console.error("AI Tree Explanation Error:", error);
     return "দুঃখিত, এই মুহূর্তে সম্পর্কের ব্যাখ্যা তৈরি করা সম্ভব হচ্ছে না।";
+  }
+}
+
+export async function searchMembersAI(query: string, members: any[]) {
+  try {
+    const memberSummaries = members.map(m => ({
+      uid: m.uid,
+      name: m.displayName,
+      village: m.village,
+      district: m.district,
+      house: m.houseName,
+      createdAt: m.createdAt?.seconds ? new Date(m.createdAt.seconds * 1000).toISOString() : 'N/A'
+    }));
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: `
+        You are a smart search assistant for a family foundation member database.
+        User Query: "${query}"
+        
+        Member Data (Summary):
+        ${JSON.stringify(memberSummaries)}
+
+        Task:
+        Identify which members match the user's natural language query. 
+        Example: "Members from Dhaka who joined last year" -> Filter by district/village 'Dhaka' and check 'createdAt' against the current year (2026).
+        
+        Return the result strictly as a JSON array of matching 'uid' strings.
+        If no matches, return [].
+        Return ONLY the JSON array.
+      `,
+    });
+
+    const jsonStr = response.text.replace(/```json/g, "").replace(/```/g, "").trim();
+    return JSON.parse(jsonStr) as string[];
+  } catch (error) {
+    console.error("AI Search Error:", error);
+    return null;
   }
 }
 

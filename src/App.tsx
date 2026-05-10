@@ -92,7 +92,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import * as d3 from 'd3';
-import { detectLineage, answerTreeQuestion, analyzeLineageImage, refineBlogPost, generatePostImage, transcribeAudio, explainFamilyTree } from './services/geminiService';
+import { detectLineage, answerTreeQuestion, analyzeLineageImage, refineBlogPost, generatePostImage, transcribeAudio, explainFamilyTree, searchMembersAI } from './services/geminiService';
 
 // Helper for string similarity (Levenshtein Distance)
 function getSimilarity(s1: string, s2: string) {
@@ -213,6 +213,7 @@ export default function App() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com';
 
@@ -540,7 +541,14 @@ export default function App() {
               {activeTab === 'committee' && <Committee profile={profile} isAdmin={profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com'} />}
               {activeTab === 'profile' && <ProfileComponent profile={profile} />}
               {activeTab === 'finance' && <Subscriptions profile={profile} />}
-              {activeTab === 'messages' && <Messenger profile={profile} onStartCall={handleStartCall} />}
+              {activeTab === 'messages' && (
+                <Messenger 
+                  profile={profile} 
+                  onStartCall={handleStartCall} 
+                  initialConversationId={activeConversationId}
+                  onClearInitialConv={() => setActiveConversationId(null)}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </section>
@@ -2446,7 +2454,10 @@ function SocialPost({ post, profile, isOwner, setActiveTab, onEdit, onDelete, on
                   displayName: post.authorName, 
                   photoURL: post.authorPhotoURL || '' 
                 }} 
-                onStartChat={() => setActiveTab('messages')}
+                onStartChat={(cid) => {
+                  setActiveConversationId(cid);
+                  setActiveTab('messages');
+                }}
               />
             )}
           </div>
@@ -2674,7 +2685,15 @@ function AISearchInterface({ members, isAdmin }: { members: UserProfile[], isAdm
         if (result.includes('---RECORD_READY---')) {
            const parts = result.split('---RECORD_READY---');
            const message = parts[0].trim();
-           const jsonStr = parts[1].replace(/```json/g, '').replace(/```/g, '').trim();
+           let jsonStr = parts[1].trim();
+           
+           // Robustly extract JSON block
+           const startIdx = jsonStr.indexOf('{');
+           const endIdx = jsonStr.lastIndexOf('}');
+           
+           if (startIdx !== -1 && endIdx !== -1) {
+             jsonStr = jsonStr.substring(startIdx, endIdx + 1);
+           }
            
            try {
              const userData = JSON.parse(jsonStr);
@@ -2682,6 +2701,7 @@ function AISearchInterface({ members, isAdmin }: { members: UserProfile[], isAdm
              setPendingRecord(userData);
            } catch (e) {
              console.error("Failed to parse AI generated record:", e);
+             // If parsing fails, just show the message normally
              setHistory(prev => [...prev, { role: 'model', content: result }]);
            }
         } else {
@@ -2849,6 +2869,27 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isAISearching, setIsAISearching] = useState(false);
+  const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
+
+  const handleSmartSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!searchQuery.trim() || isAISearching) {
+        setAiFilteredIds(null);
+        return;
+    }
+    setIsAISearching(true);
+    try {
+      // We pass the approved members primarily, but let's pass all as AI might find pending ones too
+      const ids = await searchMembersAI(searchQuery, members);
+      setAiFilteredIds(ids);
+    } catch (err) {
+      console.error("Smart Search Error:", err);
+      setAiFilteredIds(null);
+    } finally {
+      setIsAISearching(false);
+    }
+  };
   const [formData, setFormData] = useState({
     displayName: '',
     fatherName: '',
@@ -3020,6 +3061,7 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
   };
 
   const filteredMembers = members.filter(m => {
+    if (aiFilteredIds) return aiFilteredIds.includes(m.uid);
     const query = searchQuery.toLowerCase();
     return (
       m.displayName?.toLowerCase().includes(query) ||
@@ -3482,16 +3524,27 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
         <div className="p-6 border-b border-foundation-300">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h3 className="text-xl font-display font-medium text-foundation-900">Family Directory</h3>
-            <div className="relative w-full md:w-64">
+            <form onSubmit={handleSmartSearch} className="relative w-full md:w-80">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" />
               <input 
                 type="text"
-                placeholder="Search profiles..."
+                placeholder="Ask AI or search (e.g. 'Dhaka members')..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-foundation-50 rounded-xl border-none text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (!e.target.value) setAiFilteredIds(null);
+                }}
+                className="w-full pl-9 pr-24 py-2.5 bg-foundation-100 rounded-xl border-2 border-transparent focus:border-indigo-500 focus:bg-white text-xs focus:outline-none transition-all"
               />
-            </div>
+              <button 
+                type="submit"
+                disabled={isAISearching || !searchQuery.trim()}
+                className="absolute right-1.5 top-1.2 -translate-y-1/2 top-1/2 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+              >
+                {isAISearching ? <Loader2 size={10} className="animate-spin" /> : <Brain size={10} />}
+                Smart Search
+              </button>
+            </form>
           </div>
           <div className="flex items-center gap-4 mt-6">
              <div className="text-right">
@@ -3531,7 +3584,10 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
                   <DirectMessageButton 
                     currentUser={profile} 
                     targetUser={member} 
-                    onStartChat={() => setActiveTab('messages')}
+                    onStartChat={(cid) => {
+                      setActiveConversationId(cid);
+                      setActiveTab('messages');
+                    }}
                   />
                 )}
                 {isAdmin && (
@@ -5920,7 +5976,7 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
   );
 }
 
-function DirectMessageButton({ currentUser, targetUser, onStartChat }: { currentUser: UserProfile, targetUser: { uid: string, displayName: string, photoURL: string }, onStartChat: () => void }) {
+function DirectMessageButton({ currentUser, targetUser, onStartChat }: { currentUser: UserProfile, targetUser: { uid: string, displayName: string, photoURL: string }, onStartChat: (convId: string) => void }) {
   const [isStarting, setIsStarting] = useState(false);
 
   const handleStartChat = async (e: React.MouseEvent) => {
@@ -5941,7 +5997,7 @@ function DirectMessageButton({ currentUser, targetUser, onStartChat }: { current
           updatedAt: serverTimestamp()
         });
       }
-      onStartChat();
+      onStartChat(convId);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'conversations');
     } finally {
@@ -5962,9 +6018,29 @@ function DirectMessageButton({ currentUser, targetUser, onStartChat }: { current
   );
 }
 
-function Messenger({ profile, onStartCall }: { profile: UserProfile | null, onStartCall: (receiverId: string, type: 'voice' | 'video') => void }) {
+function Messenger({ 
+  profile, 
+  onStartCall, 
+  initialConversationId, 
+  onClearInitialConv 
+}: { 
+  profile: UserProfile | null, 
+  onStartCall: (receiverId: string, type: 'voice' | 'video') => void,
+  initialConversationId?: string | null,
+  onClearInitialConv?: () => void
+}) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
+
+  useEffect(() => {
+    if (initialConversationId && conversations.length > 0) {
+      const conv = conversations.find(c => c.id === initialConversationId);
+      if (conv) {
+        setSelectedConv(conv);
+        onClearInitialConv?.();
+      }
+    }
+  }, [initialConversationId, conversations, onClearInitialConv]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
