@@ -87,7 +87,8 @@ import {
   Scan,
   Fingerprint,
   Edit3,
-  Shield
+  Shield,
+  Info
 } from 'lucide-react';
 import { format } from 'date-fns';
 import * as d3 from 'd3';
@@ -2551,6 +2552,290 @@ function SocialPost({ post, profile, isOwner, setActiveTab, onEdit, onDelete, on
   );
 }
 
+
+function AISearchInterface({ members, isAdmin }: { members: UserProfile[], isAdmin: boolean }) {
+  const [queryText, setQueryText] = useState('');
+  const [history, setHistory] = useState<{ role: 'user' | 'model', content: string }[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const [currentTarget, setCurrentTarget] = useState<UserProfile | null>(null);
+  const [pendingRecord, setPendingRecord] = useState<Partial<UserProfile> | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateProfile = async () => {
+    if (!pendingRecord || !isAdmin) return;
+    setIsCreating(true);
+    try {
+      const newMemberId = pendingRecord.memberId || `M${Date.now().toString().slice(-6)}`;
+      const docRef = doc(db, 'users', newMemberId);
+      
+      const fullRecord: UserProfile = {
+        uid: newMemberId,
+        memberId: newMemberId,
+        displayName: pendingRecord.displayName || 'Unnamed Member',
+        email: '',
+        photoURL: '',
+        isApproved: true,
+        role: 'member',
+        isIdScanned: false,
+        isManuallyCreated: true, // I should check if this exists in type, it might not.
+        createdAt: serverTimestamp() as any,
+        fatherName: pendingRecord.fatherName || '',
+        motherName: pendingRecord.motherName || '',
+        village: pendingRecord.village || '',
+        houseName: pendingRecord.houseName || '',
+        nidNumber: pendingRecord.nidNumber || '',
+        mobile: pendingRecord.mobile || '',
+        bio: `Profile created by AI Intelligence on ${new Date().toLocaleDateString()}`,
+        fatherId: pendingRecord.fatherId || '',
+        motherId: '',
+        lastModified: serverTimestamp() as any // Check if this exists
+      };
+
+      await setDoc(docRef, fullRecord);
+      setHistory(prev => [...prev, { role: 'model', content: `সফলভাবে ${fullRecord.displayName} এর প্রোফাইল ডাটাবেজে যুক্ত করা হয়েছে! মেম্বার আইডি: ${fullRecord.memberId}` }]);
+      setPendingRecord(null);
+    } catch (err) {
+      console.error(err);
+      setHistory(prev => [...prev, { role: 'model', content: "দুঃখিত, প্রোফাইল তৈরিতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।" }]);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleAISearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!queryText.trim()) return;
+    
+    const userMessage = queryText.trim();
+    setIsThinking(true);
+    setQueryText('');
+    
+    // Append user message to history
+    const newHistory = [...history, { role: 'user' as const, content: userMessage }];
+    setHistory(newHistory);
+    
+    try {
+      const searchTerm = userMessage.toLowerCase();
+      // Try to find the member if not already set or if a new name is mentioned
+      let target = currentTarget;
+      
+      const potentialNewTarget = members.find(m => 
+        searchTerm.includes(m.displayName.toLowerCase()) || 
+        m.displayName.toLowerCase().split(' ').some(part => part.length > 2 && searchTerm.includes(part))
+      );
+
+      if (potentialNewTarget) {
+        target = potentialNewTarget;
+        setCurrentTarget(target);
+      }
+
+      if (target) {
+        // Build ancestry context
+        const lineage: any[] = [];
+        
+        // 1. Subject
+        lineage.push({ 
+          type: 'Subject',
+          name: target.displayName,
+          father: target.fatherName,
+          mother: target.motherName,
+          village: target.village,
+          house: target.houseName,
+          nid: target.nidNumber,
+          mobile: target.mobile,
+          bio: target.bio
+        });
+
+        // 2. Father
+        let father = members.find(m => m.uid === target.fatherId || (target.fatherId && m.memberId === target.fatherId));
+        if (father) {
+          lineage.push({
+            type: 'Father',
+            name: father.displayName,
+            father: father.fatherName,
+            mother: father.motherName,
+            house: father.houseName
+          });
+          
+          // 3. Grandfather
+          let grandfather = members.find(m => m.uid === father.fatherId || (father.fatherId && m.memberId === father.fatherId));
+          if (grandfather) {
+            lineage.push({
+              type: 'Grandfather',
+              name: grandfather.displayName,
+              father: grandfather.fatherName
+            });
+          }
+        }
+
+        const result = await explainFamilyTree(lineage, target?.displayName || 'সদস্য', newHistory, isAdmin);
+        
+        // Detect if AI has prepared a record
+        if (result.includes('---RECORD_READY---')) {
+           const parts = result.split('---RECORD_READY---');
+           const message = parts[0].trim();
+           const jsonStr = parts[1].replace(/```json/g, '').replace(/```/g, '').trim();
+           
+           try {
+             const userData = JSON.parse(jsonStr);
+             setHistory(prev => [...prev, { role: 'model', content: message }]);
+             setPendingRecord(userData);
+           } catch (e) {
+             console.error("Failed to parse AI generated record:", e);
+             setHistory(prev => [...prev, { role: 'model', content: result }]);
+           }
+        } else {
+           setHistory(prev => [...prev, { role: 'model', content: result }]);
+        }
+      } else {
+        // Fallback for general questions or if no member found
+        const fallbackResult = "আপনার জিজ্ঞাসিত সদস্যের তথ্য আমাদের ডেটাবেজে খুঁজে পাওয়া যাচ্ছে না। অনুগ্রহ করে সঠিক নাম ব্যবহার করে আবার চেষ্টা করুন বা বিস্তারিত তথ্য দিলে আমি আপনাকে সাহায্য করতে পারি।";
+        setHistory(prev => [...prev, { role: 'model', content: fallbackResult }]);
+      }
+    } catch (err) {
+      console.error(err);
+      setHistory(prev => [...prev, { role: 'model', content: "দুঃখিত, তথ্য অনুসন্ধানে এআই ইঞ্জিনে সমস্যা হয়েছে।" }]);
+    } finally {
+      setIsThinking(false);
+    }
+  };
+
+  return (
+    <div className="mb-10 relative">
+      <div className="bg-white rounded-3xl border-2 border-indigo-100 shadow-xl overflow-hidden">
+        <div className="h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500" />
+        <div className="p-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                 <Bot size={28} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-display font-black text-foundation-900 uppercase tracking-tight">AI Identification Search</h3>
+                <p className="text-xs text-foundation-400 font-bold uppercase tracking-widest">Powered by HaziBari AI • Ancestry Intelligence</p>
+              </div>
+            </div>
+            {history.length > 0 && (
+              <button 
+                onClick={() => { setHistory([]); setCurrentTarget(null); }}
+                className="text-[10px] font-black uppercase tracking-widest text-foundation-400 hover:text-red-500 transition-colors bg-foundation-100 px-3 py-1 rounded-full"
+              >
+                Clear Context
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-4 mb-6 max-h-[400px] overflow-y-auto custom-scrollbar px-1">
+            {history.length === 0 && (
+              <div className="text-center py-12 text-foundation-300">
+                <Sparkles size={32} className="mx-auto mb-3 opacity-20" />
+                <p className="text-sm font-medium">Ask about someone's lineage or identity.<br/>Tell me if I make a mistake, I'll learn!</p>
+              </div>
+            )}
+            {history.map((msg, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, x: msg.role === 'user' ? 10 : -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[85%] rounded-2xl p-4 text-sm font-medium leading-relaxed ${
+                  msg.role === 'user' 
+                  ? 'bg-indigo-600 text-white rounded-tr-none' 
+                  : 'bg-foundation-50 text-foundation-700 border border-foundation-200 rounded-tl-none'
+                }`}>
+                  {msg.content}
+                </div>
+              </motion.div>
+            ))}
+            {isThinking && (
+              <div className="flex justify-start">
+                <div className="bg-foundation-50 rounded-2xl p-4 text-foundation-400 rounded-tl-none border border-foundation-100 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span className="text-xs font-black uppercase tracking-widest italic">HaziBari AI Thinking...</span>
+                </div>
+              </div>
+            )}
+            
+            {pendingRecord && isAdmin && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-snap-yellow/10 border-2 border-snap-yellow rounded-2xl p-6 space-y-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-snap-yellow rounded-xl flex items-center justify-center">
+                    <UserPlus size={20} className="text-foundation-900" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-foundation-400">AI Proposed Registration</p>
+                    <h4 className="text-sm font-black text-foundation-900">{pendingRecord.displayName}</h4>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 text-[10px] font-bold text-foundation-600">
+                  <div className="bg-white p-2 rounded-lg border border-foundation-200">
+                    <span className="text-foundation-400 block uppercase">Father</span>
+                    {pendingRecord.fatherName || 'N/A'}
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-foundation-200">
+                    <span className="text-foundation-400 block uppercase">Village</span>
+                    {pendingRecord.village || 'N/A'}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={handleCreateProfile}
+                    disabled={isCreating}
+                    className="flex-1 bg-foundation-900 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl hover:bg-black transition-all flex items-center justify-center gap-2"
+                  >
+                    {isCreating ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    Create Official Profile
+                  </button>
+                  <button 
+                    onClick={() => setPendingRecord(null)}
+                    className="px-4 border-2 border-foundation-200 text-foundation-400 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl hover:bg-foundation-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          <form onSubmit={handleAISearch} className="relative group">
+            <input 
+              type="text" 
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              placeholder={history.length > 0 ? "পরবর্তী কিছু বলুন বা সংশোধন করে দিন..." : "কারো নাম লিখুন (যেমন: আরফিন এর পরিচয় বল...)"}
+              className="w-full bg-foundation-50 border-2 border-foundation-200 rounded-2xl py-5 pl-7 pr-40 text-lg font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-foundation-300"
+            />
+            <button 
+              type="submit"
+              disabled={isThinking || !queryText.trim()}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2 shadow-lg shadow-indigo-200 disabled:opacity-50"
+            >
+              {isThinking ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  Send
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, profile: UserProfile | null, setActiveTab: (tab: string) => void }) {
   const isApprovedMember = profile?.isApproved === true;
   const canApprove = isAdmin || isApprovedMember;
@@ -3190,6 +3475,8 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AISearchInterface members={members} isAdmin={isAdmin} />
 
       <div className="bg-white rounded-xl shadow-sm border border-foundation-300 overflow-hidden relative">
         <div className="p-6 border-b border-foundation-300">
@@ -4837,6 +5124,7 @@ function D3FamilyTree({ data }: { data: any[] }) {
 }
 
 function FamilyTree({ profile }: { profile: UserProfile | null }) {
+  const isAdmin = profile?.role === 'admin';
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<UserProfile[]>([]);
   const [selectedMember, setSelectedMember] = useState<UserProfile | null>(profile);
@@ -4882,7 +5170,7 @@ function FamilyTree({ profile }: { profile: UserProfile | null }) {
       
       setIsAiLoading(true);
       try {
-        const explanation = await explainFamilyTree(path, selectedMember.displayName);
+        const explanation = await explainFamilyTree(path, selectedMember.displayName, [], isAdmin);
         setAiExplanation(explanation || 'দুঃখিত, এই মুহূর্তে বংশ পরিচয় বিশ্লেষণ সম্ভব হয়নি।');
       } catch (err) {
         setAiExplanation('ত্রুটি ঘটেছে। আবার চেষ্টা করুন।');

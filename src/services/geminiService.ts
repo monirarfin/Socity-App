@@ -211,22 +211,53 @@ export async function transcribeAudio(base64Audio: string, mimeType: string = "a
   }
 }
 
-export async function explainFamilyTree(treeData: any, subjectName: string) {
+export async function explainFamilyTree(
+  treeData: any, 
+  subjectName: string, 
+  history: { role: 'user' | 'model', content: string }[] = [],
+  isAdmin: boolean = false
+) {
   try {
+    const historyText = history.map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `
-        You are a genealogy expert for the Hazi Bari Foundation.
-        Given the following family tree data (ancestors) for ${subjectName}:
-        ${JSON.stringify(treeData)}
+        You are "HaziBari Ancestry Intelligence v2.0" - a powerful agentic AI for the Hazi Bari Foundation.
+        
+        CONTEXT:
+        - Current Family Tree Data: ${JSON.stringify(treeData)}
+        - User is Admin: ${isAdmin}
+        - Conversational History:
+        ${historyText}
 
-        Task:
-        1. Explain the lineage and relationships clearly in Bengali.
-        2. Mention parents, grandparents, and any further ancestors found.
-        3. Make the description engaging and easy to understand for family members.
-        4. Use respectful language (Standard Bengali/Suddho Bhasha).
+        CAPABILITIES:
+        1. QUERY: Explain lineage in Bengali.
+        2. LEARN: Correct yourself if the user provides new info.
+        3. REGISTER: If the user wants to create a new profile (e.g., "অমুকের নামে প্রোফাইল কর"), you MUST guide them.
 
-        Return strictly the explanatory text in Bengali.
+        REGISTRATION WORKFLOW (Only if intent detected):
+        If the user wants to add a member, check what info is missing and ask for ONE at a time:
+        - Full Name (displayName)
+        - Member ID (unique 4-6 digit)
+        - Father's Name
+        - Mother's Name
+        - Father's Member ID (if known)
+        - Mobile Number
+        - Village
+        - House Name
+
+        OUTPUT FORMAT:
+        - If explaining: Return raw Bengali text.
+        - If collecting info: Return helpful Bengali text asking for the next field.
+        - IF ALL INFO IS COLLECTED: Add a final line "---RECORD_READY---" followed by a JSON block of the user data.
+
+        Example for registration: "চমৎকার! আমি বংশের নতুন সদস্য হিসেবে ${subjectName} এর প্রোফাইল তৈরিতে সাহায্য করছি। উনার পিতার নাম কি?"
+
+        Rules:
+        - Be highly respectful (Suddho Bhasha).
+        - If one piece of info is given, ask for the next.
+        - If the user says "cancel", stop registration.
       `,
     });
     return response.text;
@@ -235,3 +266,4 @@ export async function explainFamilyTree(treeData: any, subjectName: string) {
     return "দুঃখিত, এই মুহূর্তে সম্পর্কের ব্যাখ্যা তৈরি করা সম্ভব হচ্ছে না।";
   }
 }
+

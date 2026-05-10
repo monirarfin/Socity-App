@@ -43,6 +43,9 @@ export interface UserProfile {
   role: 'member' | 'admin' | 'collector' | 'director';
   isApproved: boolean;
   isPublicContribution?: boolean;
+  isIdScanned?: boolean;
+  isManuallyCreated?: boolean;
+  lastModified?: any;
   createdAt: any;
   updatedAt?: any;
 }
