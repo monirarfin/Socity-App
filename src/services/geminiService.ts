@@ -66,25 +66,29 @@ export async function analyzeLineageImage(imageBuffer: ArrayBuffer, mimeType: st
         {
           text: `
             Objective: Analyze this identity document (e.g., NID, Passport, Birth Certificate, or School Certificate). 
-            Identify the person's name and their father's name (and grandfather's if available). 
+            Extract detailed personal and family information.
             
             1. Extract the "Subject Name" (the owner of the ID).
-            2. Extract the "Father's Name".
-            3. Extract the "Mother's Name" (if available).
-            4. Look for "Grandfather's Name" (often in birth certificates or older records).
-            5. If the doc is in Bengali, provide the names in both English (transliterated) and Bengali.
+            2. Extract columns for "Father's Name" and "Mother's Name".
+            3. Extract "Village" (গ্রাম) and "District" (জেলা) from the address and ID details.
+            4. Extract "NID Number" or "Voter ID Number" or "Certificate ID".
+            5. Extract "House Name" (বাড়ির নাম) if available.
+            6. If the document is in Bengali, provide the names in both English (transliterated) and Bengali.
 
             Return a structured JSON object:
             {
               "subject": { "name": "...", "nameBengali": "..." },
               "father": { "name": "...", "nameBengali": "..." },
               "mother": { "name": "...", "nameBengali": "..." },
-              "grandfather": { "name": "...", "nameBengali": "..." },
-              "summary": "Short description of what was found",
-              "confidence": 0.85
+              "village": "...",
+              "district": "...",
+              "nidNumber": "...",
+              "house": "...",
+              "summary": "Short description of extracted data",
+              "confidence": 0.9
             }
 
-            It is critical to be accurate. If a name is missing, use null.
+            Constraint: If any specific field is NOT found, use NULL for that field. 
             Strictly return ONLY the JSON.
           `
         },

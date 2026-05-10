@@ -84,7 +84,8 @@ import {
   Copy,
   ArrowRight,
   CheckCircle,
-  Scan
+  Scan,
+  Fingerprint
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { detectLineage, answerTreeQuestion, analyzeLineageImage, refineBlogPost, generatePostImage, transcribeAudio } from './services/geminiService';
@@ -202,7 +203,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 export default function App() {
   const [user, loading, error] = useAuthState(auth);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [activeTab, setActiveTab] = useState('feed');
+  const [activeTab, setActiveTab] = useState('members');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -372,6 +373,36 @@ export default function App() {
 
   if (profile && !profile.houseName) {
     return <RegistrationPage profile={profile} />;
+  }
+
+  if (profile && !profile.isApproved && profile.role !== 'admin' && profile.role !== 'director' && profile.email !== 'mdmonirahamedarfin@gmail.com') {
+    return (
+      <div className="min-h-screen bg-foundation-100 flex items-center justify-center p-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 text-center border border-foundation-200"
+        >
+          <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Clock size={40} className="text-amber-600 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-display font-bold text-foundation-900 mb-4">Registration Pending</h2>
+          <p className="text-foundation-600 text-sm leading-relaxed mb-8">
+            আসসালামু আলাইকুম, <strong>{profile.displayName}</strong>। আপনার মেম্বারশিপ আবেদনটি সফলভাবে জমা হয়েছে। আমাদের অ্যাডমিন প্যানেল আপনার দেওয়া তথ্য যাচাই করছে। 
+          </p>
+          <div className="bg-foundation-50 rounded-2xl p-4 mb-8 border border-foundation-100">
+             <p className="text-[10px] text-foundation-400 font-black uppercase tracking-widest mb-1">Application ID</p>
+             <p className="text-xs font-mono font-bold text-foundation-900">{profile.uid.substring(0, 8).toUpperCase()}</p>
+          </div>
+          <button 
+            onClick={() => auth.signOut()}
+            className="w-full py-4 bg-foundation-900 text-white rounded-xl font-bold hover:bg-foundation-800 transition-all"
+          >
+            Log Out
+          </button>
+        </motion.div>
+      </div>
+    );
   }
 
   return (
@@ -731,10 +762,13 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
   const [isSmartScanOpen, setIsSmartScanOpen] = useState(true);
   const [scannedData, setScannedData] = useState<any>(null);
   const [formData, setFormData] = useState({
+    displayName: '',
     fatherName: '',
     motherName: '',
     houseName: '',
-    houseSegment: '',
+    village: '',
+    district: '',
+    nidNumber: '',
     familyHead: '',
     mobile: ''
   });
@@ -743,10 +777,19 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
   const handleAIResult = (child: string, father: string, fullSuggestion?: any) => {
     setScannedData(fullSuggestion);
     setIsSmartScanOpen(false);
+    
+    // Function to handle missing data
+    const getValue = (val: any) => (val && val !== 'null' && val !== 'NULL' ? val : 'তথ্য পাওয়া যায়নি');
+
     setFormData(prev => ({
       ...prev,
-      fatherName: fullSuggestion?.father?.name || '',
-      motherName: fullSuggestion?.mother?.name || '',
+      displayName: getValue(fullSuggestion?.subject?.name),
+      fatherName: getValue(fullSuggestion?.father?.name),
+      motherName: getValue(fullSuggestion?.mother?.name),
+      village: getValue(fullSuggestion?.village),
+      district: getValue(fullSuggestion?.district),
+      nidNumber: getValue(fullSuggestion?.nidNumber),
+      houseName: getValue(fullSuggestion?.house),
     }));
   };
 
@@ -763,9 +806,12 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
         autoFatherId = fatherSnap.docs[0].id;
       }
 
+      const slug = formData.displayName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+
       const updateData = {
         ...formData,
-        displayName: scannedData?.subject?.name || profile.displayName,
+        memberSlug: slug,
+        memberId: `HB-${formData.displayName.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
         fatherId: autoFatherId || profile.fatherId,
         isApproved: false,
         role: 'member' as const,
@@ -778,9 +824,9 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
       await addDoc(collection(db, 'notifications'), {
         type: 'registration',
         userId: profile.uid,
-        userName: profile.displayName,
+        userName: formData.displayName || profile.displayName,
         userPhotoURL: profile.photoURL || '',
-        message: `${profile.displayName} has applied for membership.${autoFatherId ? ' System auto-linked their lineage.' : ''}`,
+        message: `${formData.displayName || profile.displayName} has applied for membership.${autoFatherId ? ' System auto-linked their lineage.' : ''}`,
         read: false,
         createdAt: serverTimestamp()
       });
@@ -865,8 +911,8 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
                 <Input 
                   label="Full Name (English)" 
                   required 
-                  value={scannedData?.subject?.name || profile.displayName} 
-                  onChange={(e: any) => setScannedData({...scannedData, subject: {...scannedData?.subject, name: e.target.value}})}
+                  value={formData.displayName} 
+                  onChange={(e: any) => setFormData({...formData, displayName: e.target.value})}
                 />
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -885,27 +931,42 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <Input 
+                    label="Village (গ্রাম)" 
+                    required 
+                    value={formData.village} 
+                    onChange={(e: any) => setFormData({...formData, village: e.target.value})} 
+                  />
+                  <Input 
+                    label="District (জেলা)" 
+                    required 
+                    value={formData.district} 
+                    onChange={(e: any) => setFormData({...formData, district: e.target.value})} 
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <Input 
                     label="House Name (বাড়ির নাম)" 
                     required 
                     value={formData.houseName} 
                     onChange={(e: any) => setFormData({...formData, houseName: e.target.value})} 
                   />
                   <Input 
-                    label="House Segment" 
-                    value={formData.houseSegment} 
-                    onChange={(e: any) => setFormData({...formData, houseSegment: e.target.value})} 
+                    label="Voter ID / NID Index (ভোটার আইডি নাম্বার)" 
+                    value={formData.nidNumber} 
+                    onChange={(e: any) => setFormData({...formData, nidNumber: e.target.value})} 
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <Input 
-                    label="Head of Family" 
+                    label="Head of Family (পরিবারের কর্তা)" 
                     required 
                     value={formData.familyHead} 
                     onChange={(e: any) => setFormData({...formData, familyHead: e.target.value})} 
                   />
                   <Input 
-                    label="Mobile Number" 
+                    label="Mobile Number (মোবাইল নম্বর)" 
                     required 
                     value={formData.mobile} 
                     onChange={(e: any) => setFormData({...formData, mobile: e.target.value})} 
@@ -928,7 +989,7 @@ function RegistrationPage({ profile }: { profile: UserProfile }) {
                 ) : (
                   <>
                     <CheckCircle size={18} />
-                    Submit for Approval
+                    Register as a family member
                   </>
                 )}
               </button>
@@ -2447,6 +2508,7 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
   const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<UserProfile | null>(null);
   const [showSmartJoin, setShowSmartJoin] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
@@ -2456,6 +2518,19 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
     }, (err) => handleFirestoreError(err, OperationType.GET, 'users'));
     return () => unsubscribe();
   }, []);
+
+  const filteredMembers = members.filter(m => {
+    const query = searchQuery.toLowerCase();
+    return (
+      m.displayName?.toLowerCase().includes(query) ||
+      m.fatherName?.toLowerCase().includes(query) ||
+      m.motherName?.toLowerCase().includes(query) ||
+      m.houseName?.toLowerCase().includes(query) ||
+      m.village?.toLowerCase().includes(query) ||
+      m.district?.toLowerCase().includes(query) ||
+      m.nidNumber?.toLowerCase().includes(query)
+    );
+  });
 
   const toggleApproval = async (uid: string, currentStatus: boolean) => {
     if (!isAdmin) return;
@@ -2543,27 +2618,39 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
       </AnimatePresence>
 
       <div className="bg-white rounded-xl shadow-sm border border-foundation-300 overflow-hidden relative">
-        <div className="p-6 border-b border-foundation-300 flex items-center justify-between">
-          <h3 className="text-xl font-display font-medium text-foundation-900">Family Directory</h3>
-          <div className="flex items-center gap-4">
-             <div className="text-right hidden sm:block">
-                <p className="text-[10px] text-foundation-400 font-black uppercase">Active Members</p>
+        <div className="p-6 border-b border-foundation-300">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h3 className="text-xl font-display font-medium text-foundation-900">Family Directory</h3>
+            <div className="relative w-full md:w-64">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" />
+              <input 
+                type="text"
+                placeholder="Search profiles..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-foundation-50 rounded-xl border-none text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-4 mt-6">
+             <div className="text-right">
+                <p className="text-[10px] text-foundation-400 font-black uppercase tracking-widest">Active Members</p>
                 <p className="text-sm font-bold text-foundation-900">{members.filter(m => m.isApproved).length}</p>
              </div>
-             <div className="h-8 w-px bg-foundation-200 hidden sm:block" />
+             <div className="h-8 w-px bg-foundation-200" />
              <div className="text-right">
-                <p className="text-[10px] text-foundation-400 font-black uppercase">Pending Approval</p>
+                <p className="text-[10px] text-foundation-400 font-black uppercase tracking-widest">Pending</p>
                 <p className="text-sm font-bold text-amber-600">{members.filter(m => !m.isApproved).length}</p>
              </div>
           </div>
         </div>
         <div className="divide-y divide-foundation-200">
-        {members.length === 0 ? (
+        {filteredMembers.length === 0 ? (
           <div className="p-12 text-center text-foundation-500 italic">
-            No registered members yet.
+            No members found matching your search.
           </div>
         ) : (
-          members.map(member => (
+          filteredMembers.map(member => (
             <div key={member.uid} className="p-4 flex items-center justify-between hover:bg-foundation-50 transition-colors group">
               <div 
                 className="flex items-center gap-4 cursor-pointer flex-1"
@@ -2659,10 +2746,40 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
                     <LineageVisualizer user={selectedMember} />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
-                      <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Father's Name</p>
-                      <p className="text-sm font-bold text-foundation-900 italic">{selectedMember.fatherName || 'Not Recorded'}</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
+                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Father's Name</p>
+                        <p className="text-sm font-bold text-foundation-900">{selectedMember.fatherName || 'Not recorded'}</p>
+                      </div>
+                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
+                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Mother's Name</p>
+                        <p className="text-sm font-bold text-foundation-900">{selectedMember.motherName || 'Not recorded'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
+                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Village & House</p>
+                        <p className="text-sm font-bold text-foundation-900 capitalize">{selectedMember.village || 'N/A'}, {selectedMember.houseName}</p>
+                      </div>
+                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
+                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">District</p>
+                        <p className="text-sm font-bold text-foundation-900 capitalize">{selectedMember.district || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl shadow-sm flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter mb-1">Document Index / NID</p>
+                          <p className="text-sm font-bold text-indigo-900 font-mono">{selectedMember.nidNumber || 'Not provided'}</p>
+                        </div>
+                        <Fingerprint size={24} className="text-indigo-300" />
+                      </div>
+                      <div className="bg-foundation-50 border border-foundation-200 p-4 rounded-xl shadow-sm">
+                        <p className="text-[10px] font-bold text-foundation-400 uppercase tracking-tighter mb-1">Member ID</p>
+                        <p className="text-xs font-bold text-foundation-600">{selectedMember.memberId || 'HB-NEW-MEMBER'}</p>
+                      </div>
                     </div>
                     <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
                       <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Head of Family</p>
@@ -2694,9 +2811,8 @@ function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, pro
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -2949,6 +3065,8 @@ function AdminApprovalList() {
                     <p className="text-[10px] text-foundation-500">{user.email}</p>
                     <div className="flex gap-2 mt-1">
                       <span className="text-[9px] bg-foundation-200 text-foundation-600 px-1.5 py-0.5 rounded font-medium">{user.houseName}</span>
+                      <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{user.village}, {user.district}</span>
+                      <span className="text-[9px] bg-foundation-200 text-foundation-600 px-1.5 py-0.5 rounded font-medium">NID: {user.nidNumber}</span>
                       <span className="text-[9px] bg-foundation-200 text-foundation-600 px-1.5 py-0.5 rounded font-medium">{user.mobile}</span>
                     </div>
                   </div>
@@ -3376,6 +3494,13 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
       if (result) {
         setSuggestion(result);
         
+        // AUTOMATICALLY Proceed to form if confidence is high
+        if (result.confidence > 0.8) {
+           setTimeout(() => {
+             onResult(result.subject?.name || '', result.father?.name || '', result);
+           }, 2000); // 2 second delay to show the extracted result to the user
+        }
+        
         // Search for potential database matches to suggest "Root Connection"
         const matches: any[] = [];
         try {
@@ -3575,13 +3700,32 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
                       {suggestion.mother.nameBengali && <p className="text-[10px] text-foundation-500">{suggestion.mother.nameBengali}</p>}
                     </div>
                   )}
-                  {suggestion.grandfather?.name && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100 col-span-full">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Grandfather</p>
-                      <p className="text-xs font-bold">{suggestion.grandfather.name}</p>
+                  {suggestion.nidNumber && (
+                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Document ID / NID</p>
+                      <p className="text-xs font-bold font-mono">{suggestion.nidNumber}</p>
+                    </div>
+                  )}
+                  {suggestion.village && (
+                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Village & District</p>
+                      <p className="text-[10px] font-bold">{suggestion.village}, {suggestion.district || 'N/A'}</p>
+                    </div>
+                  )}
+                  {suggestion.house && (
+                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">House (বাড়ি)</p>
+                      <p className="text-xs font-bold">{suggestion.house}</p>
                     </div>
                   )}
                 </div>
+
+                <button 
+                  onClick={() => onResult(suggestion.subject?.name || '', suggestion.father?.name || '', suggestion)}
+                  className="w-full bg-indigo-600 text-white rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <Scan size={14} /> Continue with Registration
+                </button>
 
                 {dbMatches.length > 0 && (
                   <div className="pt-2 border-t border-indigo-50">
