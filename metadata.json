@@ -1,6 +1,6 @@
 {
   "name": "Hazi Bari Foundation",
   "description": "A centralized family foundation portal for the Hazi Bari descendants to connect, manage development projects, and support education and welfare.",
-  "requestFramePermissions": ["microphone"],
+  "requestFramePermissions": ["microphone", "camera"],
   "majorCapabilities": []
 }

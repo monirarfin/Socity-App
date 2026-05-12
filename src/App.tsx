@@ -83,12 +83,17 @@ import {
   Flag,
   Copy,
   ArrowRight,
+  ArrowUp,
   CheckCircle,
+  Gavel,
+  Scale,
   Scan,
   Fingerprint,
   Edit3,
   Shield,
-  Info
+  Info,
+  X,
+  FileText
 } from 'lucide-react';
 import { format } from 'date-fns';
 import * as d3 from 'd3';
@@ -535,9 +540,9 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'feed' && <Feed profile={profile} setActiveTab={setActiveTab} />}
+              {activeTab === 'feed' && <Feed profile={profile} setActiveTab={setActiveTab} setActiveConversationId={setActiveConversationId} />}
               {activeTab === 'tree' && <FamilyTree profile={profile} />}
-              {activeTab === 'members' && <MembersList profile={profile} setActiveTab={setActiveTab} isAdmin={profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com'} />}
+              {activeTab === 'members' && <MembersList profile={profile} setActiveTab={setActiveTab} setActiveConversationId={setActiveConversationId} isAdmin={profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com'} />}
               {activeTab === 'committee' && <Committee profile={profile} isAdmin={profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com'} />}
               {activeTab === 'profile' && <ProfileComponent profile={profile} />}
               {activeTab === 'finance' && <Subscriptions profile={profile} />}
@@ -1070,7 +1075,7 @@ function Input({ label, ...props }: any) {
   );
 }
 
-function Feed({ profile, setActiveTab }: { profile: UserProfile | null, setActiveTab: (tab: string) => void }) {
+function Feed({ profile, setActiveTab, setActiveConversationId }: { profile: UserProfile | null, setActiveTab: (tab: string) => void, setActiveConversationId: (cid: string) => void }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [newPost, setNewPost] = useState('');
   const [editorBlocks, setEditorBlocks] = useState<BlockData[]>([]);
@@ -1714,6 +1719,7 @@ function Feed({ profile, setActiveTab }: { profile: UserProfile | null, setActiv
             profile={profile} 
             isOwner={post.authorId === profile?.uid} 
             setActiveTab={setActiveTab}
+            setActiveConversationId={setActiveConversationId}
             onEdit={() => handleEditPost(post)}
             onDelete={() => handleDeletePost(post.id)}
             onPreviewMedia={(url, type) => setFullScreenMedia({ url, type })}
@@ -1784,6 +1790,7 @@ interface SocialPostProps {
   profile: UserProfile | null;
   isOwner: boolean;
   setActiveTab: (tab: string) => void;
+  setActiveConversationId: (cid: string) => void;
   onEdit: () => void;
   onDelete: () => void;
   onPreviewMedia: (url: string, type: 'image' | 'video') => void;
@@ -1982,7 +1989,7 @@ function CommentComponent({ comment, profile, onReply }: { comment: any, profile
 }
 
 
-function SocialPost({ post, profile, isOwner, setActiveTab, onEdit, onDelete, onPreviewMedia }: SocialPostProps) {
+function SocialPost({ post, profile, isOwner, setActiveTab, setActiveConversationId, onEdit, onDelete, onPreviewMedia }: SocialPostProps) {
   const [showComments, setShowComments] = useState(false);
   const [showContributions, setShowContributions] = useState(false);
   const [showBudgetBreakdown, setShowBudgetBreakdown] = useState(false);
@@ -2856,7 +2863,7 @@ function AISearchInterface({ members, isAdmin }: { members: UserProfile[], isAdm
   );
 }
 
-function MembersList({ isAdmin, profile, setActiveTab }: { isAdmin: boolean, profile: UserProfile | null, setActiveTab: (tab: string) => void }) {
+function MembersList({ isAdmin, profile, setActiveTab, setActiveConversationId }: { isAdmin: boolean, profile: UserProfile | null, setActiveTab: (tab: string) => void, setActiveConversationId: (cid: string) => void }) {
   const isApprovedMember = profile?.isApproved === true;
   const canApprove = isAdmin || isApprovedMember;
   const [members, setMembers] = useState<UserProfile[]>([]);
@@ -4677,15 +4684,109 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [dbMatches, setDbMatches] = useState<any[]>([]);
-  const [oracleAnswer, setOracleAnswer] = useState<string | null>(null);
+  const [oracleMessages, setOracleMessages] = useState<{ role: 'user' | 'model', content: string, attachments?: { mimeType: string, url: string }[] }[]>([]);
+  const [chatAttachments, setChatAttachments] = useState<{ file: File, preview: string }[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [oracleMessages, isAnalyzing]);
+
+  const handleChatFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (prev) => {
+        setChatAttachments(p => [...p, { file, preview: prev.target?.result as string }]);
+      };
+      if (file.type.startsWith('image/')) {
+        reader.readAsDataURL(file);
+      } else {
+        setChatAttachments(p => [...p, { file, preview: '' }]); // Placeholder for docs
+      }
+    });
+  };
+
+  const removeAttachment = (index: number) => {
+    setChatAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
   const [isListening, setIsListening] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const startCamera = async () => {
+    try {
+      setIsCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera error:", err);
+      setIsCameraActive(false);
+      alert("Could not access camera. Please check permissions.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const captureFrame = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      stopCamera();
+      
+      setIsAnalyzing(true);
+      setSuggestions([]);
+      setDbMatches([]);
+      
+      try {
+        const buffer = await blob.arrayBuffer();
+        const result = await analyzeLineageImage(buffer, 'image/jpeg');
+        if (result) {
+          setSuggestions([result]);
+          const merged = mergeSuggestions([result]);
+          if (merged.confidence > 0.6) {
+             setTimeout(() => {
+               onResult(merged.subject?.name || '', merged.father?.name || '', merged);
+             }, 2000);
+          }
+        }
+      } catch (err) {
+        console.error("Camera scan error:", err);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    }, 'image/jpeg', 0.95);
+  };
 
   const mergeSuggestions = (newSuggestions: any[]) => {
     const merged = { ...newSuggestions[0] };
     
     newSuggestions.slice(1).forEach(suggest => {
-      // Merge logic: prefer non-null values
       if (!merged.subject?.name && suggest.subject?.name) merged.subject = suggest.subject;
       if (!merged.father?.name && suggest.father?.name) merged.father = suggest.father;
       if (!merged.mother?.name && suggest.mother?.name) merged.mother = suggest.mother;
@@ -4700,15 +4801,34 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
 
   const handleAnalze = async () => {
     if (!input.trim()) return;
+    const userMsg = input;
+    setInput('');
     setIsAnalyzing(true);
     setSuggestions([]);
-    setOracleAnswer(null);
+    
+    if (activeMode === 'oracle') {
+      const currentAttachments = [...chatAttachments];
+      const attData = await Promise.all(currentAttachments.map(async att => {
+        return new Promise<{ mimeType: string, data: string }>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve({
+              mimeType: att.file.type,
+              data: base64
+            });
+          };
+          reader.readAsDataURL(att.file);
+        });
+      }));
 
-    if (activeMode === 'dictator') {
-      const result = await detectLineage(input);
-      if (result) setSuggestions([result]);
-    } else if (activeMode === 'oracle') {
-      // Gather context
+      setOracleMessages(prev => [...prev, { 
+        role: 'user', 
+        content: userMsg,
+        attachments: currentAttachments.map(a => ({ mimeType: a.file.type, url: a.preview }))
+      }]);
+      setChatAttachments([]);
+      
       const q = query(collection(db, 'users'), where('isApproved', '==', true), limit(100));
       const snap = await getDocs(q);
       const context = snap.docs.map(d => {
@@ -4716,8 +4836,11 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
         return `${u.displayName} (son of ${u.fatherName || 'Unknown'})`;
       }).join(', ');
       
-      const answer = await answerTreeQuestion(input, context);
-      setOracleAnswer(answer);
+      const answer = await answerTreeQuestion(userMsg, context, oracleMessages.map(m => ({ role: m.role, content: m.content })), attData);
+      setOracleMessages(prev => [...prev, { role: 'model', content: answer }]);
+    } else if (activeMode === 'dictator') {
+      const result = await detectLineage(userMsg);
+      if (result) setSuggestions([result]);
     }
     
     setIsAnalyzing(false);
@@ -4789,7 +4912,7 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
+    recognition.lang = 'bn-BD';
     recognition.onstart = () => setIsListening(true);
     recognition.onend = () => setIsListening(false);
     recognition.onresult = (event: any) => {
@@ -4804,19 +4927,19 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
       <div className="flex items-center justify-between">
         <div className="flex bg-indigo-100 p-1 rounded-xl">
           <button 
-            onClick={() => { setActiveMode('dictator'); setInput(''); setSuggestions([]); setOracleAnswer(null); }}
+            onClick={() => { setActiveMode('dictator'); setInput(''); setSuggestions([]); setOracleMessages([]); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'dictator' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
           >
             Dictator
           </button>
           <button 
-            onClick={() => { setActiveMode('oracle'); setInput(''); setSuggestions([]); setOracleAnswer(null); }}
+            onClick={() => { setActiveMode('oracle'); setInput(''); setSuggestions([]); setOracleMessages([]); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'oracle' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
           >
             Oracle
           </button>
           <button 
-            onClick={() => { setActiveMode('scanner'); setInput(''); setSuggestions([]); setOracleAnswer(null); }}
+            onClick={() => { setActiveMode('scanner'); setInput(''); setSuggestions([]); setOracleMessages([]); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'scanner' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
           >
             Scanner
@@ -4828,7 +4951,178 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
         </div>
       </div>
       
-      {activeMode !== 'scanner' ? (
+      {activeMode === 'oracle' ? (
+        <div className="flex flex-col h-[450px] md:h-[550px] bg-white/40 backdrop-blur-md rounded-3xl border border-indigo-100/50 overflow-hidden shadow-2xl transition-all duration-500">
+           {/* Chat Header */}
+           <div className="p-4 bg-gradient-to-r from-indigo-600 to-blue-600 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 backdrop-blur-xl rounded-2xl flex items-center justify-center border border-white/30 shadow-inner">
+                  <Gavel className="text-white" size={20} />
+                </div>
+                <div>
+                   <h4 className="text-[12px] font-black uppercase tracking-widest text-white leading-tight">Land Law Oracle</h4>
+                   <div className="flex items-center gap-1.5 mt-0.5">
+                     <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]" />
+                     <span className="text-[8px] font-bold text-indigo-100/80 uppercase tracking-tighter">AI Expert Online | v3.0</span>
+                   </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setOracleMessages([])}
+                className="p-2 hover:bg-white/10 rounded-xl text-white/70 hover:text-white transition-colors"
+                title="Clear Chat"
+              >
+                <Trash2 size={14} />
+              </button>
+           </div>
+
+           {/* Chat Messages */}
+           <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar bg-slate-50/30">
+              {oracleMessages.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+                  <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center animate-pulse">
+                    <Scale className="text-indigo-600" size={32} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-black text-indigo-900 uppercase">Expert Legal & Ancestry Advice</p>
+                    <p className="text-[9px] text-foundation-500 max-w-[200px]">জমিজমার দলীল দস্তাবেজ, বিএস খতিয়ান বা উত্তরাধিকার সংক্রান্ত প্রশ্ন করুন।</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
+                    {['দলীল কী?', 'খতিয়ান যাচাই', 'ফারায়েজ আইন', 'বংশ পরিচয়'].map(hint => (
+                      <button 
+                        key={hint}
+                        onClick={() => { setInput(hint); }}
+                        className="p-2 bg-white border border-indigo-100 rounded-xl text-[9px] font-bold text-indigo-600 hover:bg-indigo-50 transition-all text-left truncate shadow-sm"
+                      >
+                        {hint}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {oracleMessages.map((msg, idx) => (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  key={idx} 
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`max-w-[85%] p-4 rounded-3xl shadow-lg text-xs leading-relaxed transition-all ${
+                    msg.role === 'user' 
+                      ? 'bg-gradient-to-tr from-indigo-600 to-blue-500 text-white rounded-tr-none shadow-indigo-200/50' 
+                      : 'bg-white/80 backdrop-blur-md text-foundation-900 rounded-tl-none border border-white/50 shadow-slate-200/50'
+                  }`}>
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {msg.attachments.map((att, i) => (
+                          <div key={i} className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/30 shadow-inner group relative">
+                            {att.mimeType.startsWith('image/') ? (
+                              <img src={att.url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-indigo-50/50">
+                                <FileText size={24} className="text-indigo-500 mb-1" />
+                                <span className="text-[8px] break-all uppercase font-black text-indigo-400">PDF Document</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className={`max-w-none ${msg.role === 'user' ? 'text-white' : 'text-foundation-900'}`}>
+                      {msg.content}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+              
+              {isAnalyzing && (
+                <div className="flex justify-start">
+                  <div className="bg-white/70 backdrop-blur-sm border border-indigo-100 p-3 rounded-2xl rounded-tl-none flex items-center gap-2 shadow-sm">
+                    <div className="flex gap-1">
+                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" />
+                    </div>
+                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Oracle Thinking...</span>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+           </div>
+
+           {/* Message Input */}
+           <div className="p-3 bg-white/80 backdrop-blur-xl border-t border-indigo-100/50">
+              {chatAttachments.length > 0 && (
+                <div className="flex gap-2 mb-3 pb-2 border-b border-indigo-50 overflow-x-auto">
+                  {chatAttachments.map((att, i) => (
+                    <div key={i} className="relative group shrink-0">
+                      <div className="w-14 h-14 rounded-xl border border-indigo-100 overflow-hidden bg-indigo-50 flex items-center justify-center">
+                        {att.file.type.startsWith('image/') ? (
+                          <img src={att.preview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <FileText size={20} className="text-indigo-400" />
+                        )}
+                      </div>
+                      <button 
+                        onClick={() => removeAttachment(i)}
+                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="relative flex items-center gap-2">
+                <input 
+                  type="file" 
+                  ref={chatFileRef} 
+                  onChange={handleChatFileSelect} 
+                  multiple 
+                  accept="image/*,application/pdf" 
+                  className="hidden" 
+                />
+                <button 
+                  onClick={() => chatFileRef.current?.click()}
+                  className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-100 transition-all border border-indigo-100/50"
+                  title="Attach File"
+                >
+                  <Paperclip size={18} />
+                </button>
+                <textarea 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleAnalze();
+                    }
+                  }}
+                  placeholder="দলীল বা আইন নিয়ে প্রশ্ন করুন..."
+                  className="w-full flex-1 bg-white border border-indigo-200 rounded-2xl p-3 text-[11px] focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[50px] max-h-[120px] pr-12 transition-all resize-none shadow-inner"
+                />
+                <button 
+                  onClick={handleAnalze}
+                  disabled={isAnalyzing || !input.trim()}
+                  className="absolute right-2 p-2 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale"
+                >
+                  <ArrowUp size={16} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between mt-2 px-1">
+                 <button 
+                   onClick={startDictation}
+                   className={`flex items-center gap-1.5 p-1 px-2 rounded-lg transition-all ${isListening ? 'bg-red-50 text-red-600' : 'text-indigo-400 hover:text-indigo-600'}`}
+                 >
+                   <Mic size={12} className={isListening ? 'animate-pulse' : ''} />
+                   <span className="text-[8px] font-black uppercase tracking-tighter">{isListening ? 'Listening...' : 'Voice Input'}</span>
+                 </button>
+                 <p className="text-[8px] text-foundation-400 font-bold uppercase tracking-widest">2026 AI Bongsho Intelligence</p>
+              </div>
+           </div>
+        </div>
+      ) : activeMode !== 'scanner' ? (
         <div className="relative">
           <textarea 
             value={input}
@@ -4853,25 +5147,85 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50 transition-colors">
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleImageUpload} 
-            accept="image/*" 
-            multiple
-            className="hidden" 
-          />
-          <Camera className="text-indigo-400 mb-2" size={32} />
-          <p className="text-[10px] font-bold text-indigo-600 uppercase mb-4 text-center">Scan NID, Birth Certificate, Passport<br/>or Hand-written Charts (Select Multiple)</p>
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isAnalyzing}
-            className="bg-indigo-600 text-white px-6 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
-          >
-            {isAnalyzing ? "Scanning Documents..." : "Select Documents"}
-          </button>
-          <p className="text-[8px] text-foundation-400 mt-4 uppercase text-center font-bold tracking-widest">Connect with your Root instantly using Multiple Docs</p>
+        <div className="space-y-4">
+          <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50 transition-colors relative overflow-hidden">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImageUpload} 
+              accept="image/*,application/pdf" 
+              multiple
+              className="hidden" 
+            />
+            
+            {isCameraActive ? (
+              <div className="w-full relative bg-black rounded-xl overflow-hidden aspect-video">
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  className="w-full h-full object-cover"
+                />
+                <canvas ref={canvasRef} className="hidden" />
+                <div className="absolute inset-0 border-2 border-white/30 pointer-events-none flex items-center justify-center">
+                   <div className="w-48 h-48 border-2 border-dashed border-indigo-400 rounded-lg" />
+                </div>
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 px-4">
+                   <button 
+                     onClick={stopCamera}
+                     className="px-4 py-2 bg-foundation-900/80 text-white rounded-xl text-[10px] font-black uppercase tracking-widest backdrop-blur-md"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                     onClick={captureFrame}
+                     className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center gap-2"
+                   >
+                     <Zap size={12} fill="white" /> Capture & Scan
+                   </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-4 mb-4">
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isAnalyzing}
+                    className="flex flex-col items-center gap-2 group"
+                  >
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-indigo-100 group-hover:scale-110 group-hover:border-indigo-400 transition-all">
+                       <FileText className="text-indigo-600" size={24} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase text-indigo-600">Upload PDF/Img</span>
+                  </button>
+                  <button 
+                    onClick={startCamera}
+                    disabled={isAnalyzing}
+                    className="flex flex-col items-center gap-2 group"
+                  >
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-indigo-100 group-hover:scale-110 group-hover:border-indigo-400 transition-all">
+                       <Camera className="text-indigo-600" size={24} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase text-indigo-600">Live Scan</span>
+                  </button>
+                </div>
+                
+                <p className="text-[10px] font-bold text-indigo-600 uppercase mb-4 text-center">
+                  Scan NID, Birth Certificate, PDF Passport<br/>
+                  or Hand-written Charts
+                </p>
+
+                {isAnalyzing && (
+                  <div className="flex items-center gap-3 px-6 py-3 bg-indigo-600 text-white rounded-2xl shadow-xl animate-pulse">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">AI Analysis in Progress...</span>
+                  </div>
+                )}
+              </>
+            )}
+            
+            <p className="text-[8px] text-foundation-400 mt-4 uppercase text-center font-bold tracking-widest">Connect with your Root instantly using Multiple Docs</p>
+          </div>
         </div>
       )}
 
@@ -5064,27 +5418,6 @@ function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string
                 </p>
               </div>
             )}
-          </motion.div>
-        )}
-
-        {oracleAnswer && activeMode === 'oracle' && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-indigo-900 border border-indigo-800 p-4 rounded-2xl shadow-xl text-white relative overflow-hidden group"
-          >
-            <div className="absolute top-0 right-0 p-2 opacity-20 group-hover:opacity-40 transition-opacity">
-              <Sparkles size={40} className="text-indigo-400" />
-            </div>
-            <div className="relative z-10 flex gap-3">
-              <div className="shrink-0 w-8 h-8 bg-indigo-700 rounded-lg flex items-center justify-center border border-indigo-600 mt-1">
-                <Bot size={16} className="text-indigo-300" />
-              </div>
-              <div>
-                <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest mb-1">AI Oracle Insight</p>
-                <p className="text-xs leading-relaxed text-indigo-50 italic">"{oracleAnswer}"</p>
-              </div>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>

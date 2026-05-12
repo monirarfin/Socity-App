@@ -25,23 +25,64 @@ export async function detectLineage(text: string) {
   }
 }
 
-export async function answerTreeQuestion(question: string, treeContext: string) {
+export async function answerTreeQuestion(
+  question: string, 
+  treeContext: string, 
+  history: { role: 'user' | 'model', content: string }[] = [],
+  attachments: { mimeType: string, data: string }[] = []
+) {
   try {
+    const historyParts = history.map(h => ({
+      role: h.role,
+      parts: [{ text: h.content }]
+    }));
+
+    const currentParts: any[] = [{ text: question }];
+    
+    // Add attachments to the current message parts
+    attachments.forEach(att => {
+      currentParts.push({
+        inlineData: {
+          mimeType: att.mimeType,
+          data: att.data
+        }
+      });
+    });
+
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: `
-        You are the AI Bongsho (Lineage) Assistant for the Hazi Bari Foundation.
-        Context of some family members: ${treeContext}
-        
-        Question: ${question}
-        
-        Answer concisely and respectfully in the context of family lineage. If you don't know, suggest they check the official records in the search bar.
-      `,
+      contents: [
+        {
+          role: 'user',
+          parts: [{
+            text: `
+              You are "HaziBari Legal Oracle & Lineage Expert v3.0".
+              
+              YOUR IDENTITY:
+              1. BANGLADESHI LAND LAW EXPERT.
+              2. DOCUMENT SPECIALIST.
+              3. FAMILY ANCESTRY EXPERT.
+              
+              CONTEXT:
+              - Family Members Snippet: ${treeContext}
+              
+              GUIDELINES:
+              - TONE: Professional, authoritative yet respectful Bengali.
+              - Multi-modal: If the user provides images/PDFs, analyze them for land records or lineage info.
+            `
+          }]
+        },
+        ...historyParts,
+        {
+          role: 'user',
+          parts: currentParts
+        }
+      ],
     });
     return response.text;
   } catch (error) {
     console.error("AI Tree Question Error:", error);
-    return "I'm sorry, I couldn't process that question right now.";
+    return "দুঃখিত, এই মুহূর্তে আমি আপনার প্রশ্নের উত্তর দিতে পারছি না। অনুগ্রহ করে পরে চেষ্টা করুন।";
   }
 }
 
