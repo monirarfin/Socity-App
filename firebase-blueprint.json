@@ -174,7 +174,7 @@
       "schema": "Comment",
       "description": "Global comments collection for simplicity or subcollection later"
     },
-    "contributions": {
+    "posts/{postId}/contributions": {
       "schema": "Contribution",
       "description": "Project-specific financial contributions from members"
     },

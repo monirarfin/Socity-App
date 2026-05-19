@@ -175,8 +175,8 @@ service cloud.firestore {
                     || isOwner(get(/databases/$(database)/documents/posts/$(existing().postId)).data.authorId);
     }
 
-    // Contributions
-    match /contributions/{contribId} {
+    // Contributions (Subcollection of posts)
+    match /posts/{postId}/contributions/{contribId} {
       allow read: if isApproved() || isAdmin();
       allow create: if isApproved() && isValidContribution(incoming());
       allow update: if isAdmin();

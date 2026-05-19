@@ -2022,13 +2022,12 @@ function SocialPost({ post, profile, isOwner, setActiveTab, setActiveConversatio
   useEffect(() => {
     if (post.type === 'project') {
       const q = query(
-        collection(db, 'contributions'), 
-        where('postId', '==', post.id), 
+        collection(db, 'posts', post.id, 'contributions'), 
         orderBy('createdAt', 'desc')
       );
       const unsubscribe = onSnapshot(q, (snap) => {
         setContributions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contribution)));
-      });
+      }, (err) => handleFirestoreError(err, OperationType.GET, `posts/${post.id}/contributions`));
       return () => unsubscribe();
     }
   }, [post.id, post.type]);
@@ -5897,7 +5896,7 @@ function ProjectContributionPanel({ post, profile, contributions, isAdmin }: { p
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'contributions'), {
+      await addDoc(collection(db, 'posts', post.id, 'contributions'), {
         postId: post.id,
         userId: profile.uid,
         userName: profile.displayName,
@@ -5913,7 +5912,7 @@ function ProjectContributionPanel({ post, profile, contributions, isAdmin }: { p
       setTransactionId('');
       alert('Your contribution record has been submitted for admin verification. Thank you!');
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'contributions');
+      handleFirestoreError(err, OperationType.WRITE, `posts/${post.id}/contributions`);
     } finally {
       setIsSubmitting(false);
     }
@@ -5922,9 +5921,9 @@ function ProjectContributionPanel({ post, profile, contributions, isAdmin }: { p
   const approveContribution = async (contribId: string) => {
     if (!isAdmin) return;
     try {
-      await updateDoc(doc(db, 'contributions', contribId), { status: 'approved' });
+      await updateDoc(doc(db, 'posts', post.id, 'contributions', contribId), { status: 'approved' });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `contributions/${contribId}`);
+      handleFirestoreError(err, OperationType.UPDATE, `posts/${post.id}/contributions/${contribId}`);
     }
   };
 
@@ -6108,43 +6107,44 @@ function ProjectContributionPanel({ post, profile, contributions, isAdmin }: { p
 }
 
 function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: UserProfile | null, onClose: () => void }) {
-  const [step, setStep] = useState<'amount' | 'method' | 'process' | 'success'>('amount');
+  const [step, setStep] = useState<'amount' | 'method' | 'transaction' | 'process' | 'success'>('amount');
   const [amount, setAmount] = useState('500');
   const [method, setMethod] = useState<'bkash' | 'nagad' | 'bank' | 'cash'>('bkash');
   const [isProcessing, setIsProcessing] = useState(false);
   const [trxId, setTrxId] = useState('');
 
   const handlePay = async () => {
+    if (!trxId.trim()) {
+      alert('Please enter a Transaction ID or Reference');
+      return;
+    }
     setStep('process');
     setIsProcessing(true);
     
-    // Simulate gateway delay
-    const simulatedTrx = 'HAJI' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    setTrxId(simulatedTrx);
-
+    // Simulate a brief verification/processing delay
     setTimeout(async () => {
       try {
         if (!profile) return;
-        await addDoc(collection(db, 'contributions'), {
+        await addDoc(collection(db, 'posts', post.id, 'contributions'), {
           postId: post.id,
           userId: profile.uid,
           userName: profile.displayName,
           userPhotoURL: profile.photoURL || '',
           amount: Number(amount),
           method,
-          transactionId: simulatedTrx,
+          transactionId: trxId,
           status: 'pending',
           isPublic: profile.isPublicContribution ?? true,
           createdAt: serverTimestamp()
         });
         setStep('success');
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'contributions');
+        handleFirestoreError(err, OperationType.WRITE, `posts/${post.id}/contributions`);
         onClose();
       } finally {
         setIsProcessing(false);
       }
-    }, 2500);
+    }, 1500);
   };
 
   return (
@@ -6165,25 +6165,25 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
             <ArrowLeft size={20} />
           </button>
           <div className="flex justify-center mb-4">
-            <ShieldCheck size={40} className="text-emerald-200" />
+            <DollarSign size={40} className="text-emerald-200" />
           </div>
-          <h2 className="text-lg font-bold">Secure Payment Gateway</h2>
-          <p className="text-[10px] text-emerald-100 uppercase tracking-widest font-mono mt-1">Founders Secure Checkout</p>
+          <h2 className="text-lg font-bold">Foundation Contribution</h2>
+          <p className="text-[10px] text-emerald-100 uppercase tracking-widest font-mono mt-1">Manual Verification Required</p>
         </div>
 
         <div className="p-6">
           {step === 'amount' && (
             <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-6">
               <div className="text-center">
-                <p className="text-xs text-foundation-500 mb-1">Total Contribution Amount</p>
+                <p className="text-xs text-foundation-500 mb-1">Enter Contribution Amount</p>
                 <div className="flex items-center justify-center gap-2">
                   <span className="text-3xl font-bold text-foundation-900">৳</span>
                   <input 
-                    type="number"
-                    value={amount}
-                    onChange={e => setAmount(e.target.value)}
-                    className="text-4xl font-bold text-foundation-900 w-32 border-none focus:ring-0 text-center bg-transparent"
-                    autoFocus
+                     type="number"
+                     value={amount}
+                     onChange={e => setAmount(e.target.value)}
+                     className="text-4xl font-bold text-foundation-900 w-32 border-none focus:ring-0 text-center bg-transparent"
+                     autoFocus
                   />
                 </div>
               </div>
@@ -6204,14 +6204,14 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
                 onClick={() => setStep('method')}
                 className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
               >
-                Continue to Payment
+                Choose Payment Method
               </button>
             </motion.div>
           )}
 
           {step === 'method' && (
             <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-4">
-              <p className="text-xs font-bold text-foundation-500 uppercase tracking-widest text-center">Select Payment Method</p>
+              <p className="text-xs font-bold text-foundation-500 uppercase tracking-widest text-center">Select Your Payment Channel</p>
               
               <div className="space-y-3">
                 {[
@@ -6231,7 +6231,7 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
                       </div>
                       <div className="text-left">
                         <p className="text-sm font-bold text-foundation-900">{m.name}</p>
-                        <p className="text-[10px] text-foundation-400">Secure Instant Pay</p>
+                        <p className="text-[10px] text-foundation-400">Manual TrxID Entry</p>
                       </div>
                     </div>
                     {method === m.id && <CheckCircle2 className="text-emerald-600" size={24} />}
@@ -6240,16 +6240,48 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
               </div>
 
               <div className="pt-4 space-y-3">
-                <div className="flex justify-between items-center bg-foundation-50 p-3 rounded-xl border border-foundation-100">
-                  <span className="text-[10px] uppercase font-bold text-foundation-400">Payable Amount</span>
-                  <span className="text-lg font-bold text-foundation-900">৳ {Number(amount).toLocaleString()}</span>
-                </div>
                 <button 
-                  onClick={handlePay}
+                  onClick={() => setStep('transaction')}
                   className="w-full py-4 bg-foundation-900 text-white rounded-2xl font-bold hover:bg-black transition-all flex items-center justify-center gap-2"
                 >
-                  <Lock size={16} />
-                  Authorize & Pay Now
+                  Confirm Choice
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 'transaction' && (
+            <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-6">
+              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 space-y-2">
+                 <p className="text-[10px] uppercase font-bold text-emerald-600">Payment Instructions</p>
+                 <p className="text-xs text-emerald-900">Please send your contribution to the foundation's official <strong>{method}</strong> account. Once done, enter the Transaction ID below.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foundation-500 uppercase tracking-widest">Transaction ID / Reference</label>
+                  <input 
+                    value={trxId}
+                    onChange={e => setTrxId(e.target.value)}
+                    placeholder="e.g. 9L4X2M7N"
+                    className="w-full p-4 rounded-2xl border border-foundation-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-mono"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="bg-foundation-50 p-4 rounded-2xl border border-foundation-100">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-foundation-500">Amount to declare</span>
+                    <span className="font-bold text-foundation-900">৳ {Number(amount).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handlePay}
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
+                >
+                  <Send size={16} />
+                  Submit Project Contribution
                 </button>
               </div>
             </motion.div>
@@ -6261,11 +6293,8 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
                 <Loader2 size={60} className="text-emerald-600 animate-spin" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold text-foundation-900">Securing Transaction</h3>
-                <p className="text-xs text-foundation-500">Connecting to {method.toUpperCase()} secure servers...</p>
-              </div>
-              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 animate-pulse">
-                <p className="text-[10px] font-mono text-emerald-800">Processing: {Number(amount).toLocaleString()} BDT</p>
+                <h3 className="text-xl font-bold text-foundation-900">Uploading Record</h3>
+                <p className="text-xs text-foundation-500">Storing your contribution for verification...</p>
               </div>
             </div>
           )}
@@ -6278,28 +6307,28 @@ function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: User
                 </div>
               </div>
               <div className="space-y-1">
-                <h3 className="text-2xl font-bold text-foundation-900">Haji Bari Foundaton</h3>
-                <p className="text-sm font-medium text-emerald-600">Contribution Successfully Recorded!</p>
+                <h3 className="text-2xl font-bold text-foundation-900">Thank You!</h3>
+                <p className="text-sm font-medium text-emerald-600">Contribution Record Submitted</p>
               </div>
               <div className="bg-foundation-50 p-6 rounded-2xl border border-foundation-100 space-y-3 text-left">
                 <div className="flex justify-between border-b border-foundation-200 pb-2">
-                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Transaction ID</span>
+                  <span className="text-[10px] font-bold text-foundation-400 uppercase">TrxID Reference</span>
                   <span className="text-[10px] font-mono font-bold text-foundation-900">{trxId}</span>
                 </div>
                 <div className="flex justify-between border-b border-foundation-200 pb-2">
-                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Amount Paid</span>
+                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Amount Declared</span>
                   <span className="text-[10px] font-bold text-foundation-900">৳ {Number(amount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Status</span>
-                  <span className="text-[10px] font-bold text-amber-600">Pending Verification</span>
+                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Verification Status</span>
+                  <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Pending Admin</span>
                 </div>
               </div>
               <button 
                 onClick={onClose}
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all"
+                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100"
               >
-                Back to Projects
+                Close Modal
               </button>
             </motion.div>
           )}
