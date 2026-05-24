@@ -1,7323 +1,2369 @@
-import React, { useEffect, useState, FormEvent, useRef } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth, db, signInWithGoogle } from './lib/firebase';
-import { doc, getDoc, setDoc, onSnapshot, collection, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, arrayUnion, arrayRemove, increment, where, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
-import { UserProfile, Post, OperationType, Notification, Contribution, BudgetLineItem, Conversation, Message, Call } from './types';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Users, 
-  Home, 
-  CreditCard, 
-  User as UserIcon, 
-  ShieldCheck, 
-  LogOut, 
-  Mail,
+  Building, 
+  FileText, 
+  Upload, 
+  Download, 
   Plus, 
-  Bell, 
-  Menu, 
-  X,
-  Megaphone,
-  BookOpen,
-  Heart,
-  Calendar,
-  Hammer,
-  LifeBuoy,
-  ThumbsUp,
-  MessageCircle,
-  Share2,
-  Send,
-  GitGraph,
-  Search,
-  ChevronRight,
-  ChevronDown,
-  Network,
-  DollarSign,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  PieChart,
-  Image as ImageIcon,
-  Trash2,
-  Smartphone,
-  Lock,
-  ArrowLeft,
-  Loader2,
-  Link2,
-  GitBranch,
-  Minus,
-  MapPin,
-  Mic,
-  Square,
-  Play,
-  Volume2,
-  Sparkles,
-  Zap,
-  Bot,
-  Brain,
-  Camera,
-  MoreVertical,
-  Pencil,
-  Save,
-  Undo2,
-  Phone,
-  Video,
-  VideoOff,
-  MicOff,
-  PhoneOff,
-  Maximize2,
-  Minimize2,
-  Smile,
-  Paperclip,
-  FileText,
-  XCircle,
-  MoreHorizontal,
-  RefreshCw,
-  File,
-  Download,
-  Eye,
-  Unlock,
-  Settings2,
-  UserPlus,
-  Flag,
-  Copy,
-  ArrowRight,
-  ArrowUp,
-  CheckCircle,
-  Gavel,
-  Scale,
-  Scan,
-  Fingerprint,
-  Edit3,
-  Shield,
+  Search, 
+  Filter, 
+  CheckCircle, 
+  Calendar, 
+  Users, 
+  Award, 
+  Trash2, 
+  Settings, 
+  AlertCircle, 
+  Lock, 
+  Activity, 
+  Sparkles, 
+  ChevronRight, 
+  X, 
   Info,
-  X,
-  FileText
+  Clock,
+  MapPin,
+  Eye,
+  FileCheck2,
+  FileArchive,
+  Flag
 } from 'lucide-react';
-import { format } from 'date-fns';
-import * as d3 from 'd3';
-import { detectLineage, answerTreeQuestion, analyzeLineageImage, refineBlogPost, generatePostImage, transcribeAudio, explainFamilyTree, searchMembersAI } from './services/geminiService';
+import confetti from 'canvas-confetti';
 
-// Helper for string similarity (Levenshtein Distance)
-function getSimilarity(s1: string, s2: string) {
-  if (!s1 || !s2) return 0;
-  let longer = s1;
-  let shorter = s2;
-  if (s1.length < s2.length) {
-    longer = s2;
-    shorter = s1;
+export interface PortalUser {
+  name: string;
+  email: string;
+  avatar: string;
+  uid: string;
+  joinedAt: string;
+}
+
+export interface CommunityComment {
+  id: string;
+  userName: string;
+  userAvatar: string;
+  text: string;
+  date: string;
+  email: string;
+}
+
+// TypeScript Interfaces for Strict Safety
+interface ProjectLog {
+  id: string;
+  date: string;
+  title: string;
+  description: string;
+  status: 'info' | 'success' | 'alert';
+}
+
+interface ProjectFile {
+  id: string;
+  name: string;
+  size: string;
+  type: 'image' | 'document';
+  extension: string;
+  uploadedAt: string;
+  dataUrl: string; // Base64 encoding for realistic offline view / download
+}
+
+interface ProjectMilestone {
+  id: string;
+  title: string;
+  plannedDate: string;
+  status: 'Pending' | 'In Progress' | 'Completed';
+}
+
+interface DevelopmentProject {
+  id: string;
+  title: string;
+  category: 'Infrastructure' | 'Health' | 'Education' | 'Disaster Relief' | 'Agriculture';
+  description: string;
+  details: string;
+  targetFund: number;
+  raisedFund: number;
+  progress: number; // 0 to 100
+  status: 'Planning' | 'In Progress' | 'On Hold' | 'Completed';
+  location: string;
+  startedDate: string;
+  completionDate?: string;
+  beneficiariesCount: number;
+  gradient: string; // Dynamic CSS gradient banner
+  logs: ProjectLog[];
+  files: ProjectFile[];
+  milestones: ProjectMilestone[];
+}
+
+// Helper to backport or initialize default milestones for projects
+const getInitialMilestonesForProject = (id: string): ProjectMilestone[] => {
+  switch (id) {
+    case 'mosque-reconstruct':
+      return [
+        { id: 'm-mr-1', title: 'Soil Testing & Excavation', plannedDate: 'Jan 20, 2026', status: 'Completed' },
+        { id: 'm-mr-2', title: 'Foundation Concrete Pouring', plannedDate: 'Feb 10, 2026', status: 'Completed' },
+        { id: 'm-mr-3', title: 'Ground Floor Completed', plannedDate: 'Feb 15, 2026', status: 'Completed' },
+        { id: 'm-mr-4', title: 'Second Floor Pillar Framing', plannedDate: 'Mar 30, 2026', status: 'Completed' },
+        { id: 'm-mr-5', title: 'Outer Dome Assembly', plannedDate: 'Jun 12, 2026', status: 'In Progress' },
+        { id: 'm-mr-6', title: 'Solar Cooling Deployment', plannedDate: 'Aug 05, 2026', status: 'Pending' }
+      ];
+    case 'deep-wells-sanitation':
+      return [
+        { id: 'm-dws-1', title: 'Hydrologic Site Assessment', plannedDate: 'Mar 12, 2026', status: 'Completed' },
+        { id: 'm-dws-2', title: 'Community Layout Survey', plannedDate: 'Mar 20, 2026', status: 'Completed' },
+        { id: 'm-dws-3', title: 'Drilling Casing Site #1 & #2', plannedDate: 'Apr 01, 2026', status: 'Completed' },
+        { id: 'm-dws-4', title: 'Drilling & Fitting Site #3', plannedDate: 'May 15, 2026', status: 'In Progress' },
+        { id: 'm-dws-5', title: 'Arsenic Laboratory Assay', plannedDate: 'Jun 10, 2026', status: 'Pending' },
+        { id: 'm-dws-6', title: 'Site #5 & #6 Water Pump Integration', plannedDate: 'Jul 25, 2026', status: 'Pending' }
+      ];
+    case 'laptop-literacy-skills':
+      return [
+        { id: 'm-lls-1', title: 'Secure Lab Location', plannedDate: 'Feb 05, 2026', status: 'Completed' },
+        { id: 'm-lls-2', title: 'Broadband Satellite Setup', plannedDate: 'Mar 10, 2026', status: 'Completed' },
+        { id: 'm-lls-3', title: 'Hardware Procurement', plannedDate: 'Mar 25, 2026', status: 'Completed' },
+        { id: 'm-lls-4', title: 'Student Batch #1 Registration', plannedDate: 'Apr 10, 2026', status: 'Completed' },
+        { id: 'm-lls-5', title: 'Course Completion & Graduation', plannedDate: 'May 08, 2026', status: 'Completed' }
+      ];
+    case 'winter-warmth-relief':
+      return [
+        { id: 'm-wwr-1', title: 'Suppliers Procurement Audits', plannedDate: 'Dec 10, 2025', status: 'Completed' },
+        { id: 'm-wwr-2', title: 'Blanket Depot Allocation', plannedDate: 'Dec 18, 2025', status: 'Completed' },
+        { id: 'm-wwr-3', title: 'Rural Workers Logistics Run 1', plannedDate: 'Dec 22, 2025', status: 'Completed' },
+        { id: 'm-wwr-4', title: 'Rural Workers Logistics Run 2', plannedDate: 'Jan 15, 2026', status: 'Completed' },
+        { id: 'm-wwr-5', title: 'Final Financial Balance Audits', plannedDate: 'Jan 20, 2026', status: 'Completed' }
+      ];
+    default:
+      return [
+        { id: 'm-gen-1', title: 'Permits & Community Clearance', plannedDate: 'May 10, 2026', status: 'Completed' },
+        { id: 'm-gen-2', title: 'Procurement of Core Materials', plannedDate: 'Jul 15, 2026', status: 'Pending' }
+      ];
   }
-  let longerLength = longer.length;
-  if (longerLength === 0) return 1.0;
-  
-  const editDistance = (str1: string, str2: string) => {
-    str1 = str1.toLowerCase();
-    str2 = str2.toLowerCase();
-    let costs = [];
-    for (let i = 0; i <= str1.length; i++) {
-      let lastValue = i;
-      for (let j = 0; j <= str2.length; j++) {
-        if (i === 0) costs[j] = j;
-        else {
-          if (j > 0) {
-            let newValue = costs[j - 1];
-            if (str1.charAt(i - 1) !== str2.charAt(j - 1))
-              newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-            costs[j - 1] = lastValue;
-            lastValue = newValue;
-          }
-        }
+};
+
+// Initial default high utility projects for the Hazi Bari Foundation
+const INITIAL_PROJECTS: DevelopmentProject[] = [
+  {
+    id: 'mosque-reconstruct',
+    title: 'Hazi Bari Jame Masjid Reconstruction Phase II',
+    category: 'Infrastructure',
+    description: 'Expanding and restoring the historic village mosque using sustainable, modern structure, solar lighting, and rainfall harvesting infrastructure to host over 1,200 worshipers.',
+    details: 'This critical construction phase concentrates on finishing the outer dome, assembling the modular second floor for womens welfare programs, and installing modern low-impact eco-cooling setups. The initial foundation phase is completely audited and finalized.',
+    targetFund: 1500000,
+    raisedFund: 1125000,
+    progress: 75,
+    status: 'In Progress',
+    location: 'Hazi Bari Central, Satkhira BDT',
+    startedDate: 'Jan 15, 2026',
+    beneficiariesCount: 1800,
+    gradient: 'from-emerald-900 via-teal-950 to-slate-950',
+    logs: [
+      { id: 'log-1', date: 'May 01, 2026', title: 'Second Floor Pillars Set', description: 'Structural pillars completed successfully with verified concrete weight tolerance.', status: 'success' },
+      { id: 'log-2', date: 'Apr 10, 2026', title: 'Solar Array Framework Approved', description: 'Procurement of high efficiency photovoltaic cells finalized for off-grid operations.', status: 'info' },
+      { id: 'log-3', date: 'Feb 15, 2026', title: 'Ground Floor Open for Prayers', description: 'Interim prayer hall finalized with high volume industrial ventilation systems.', status: 'success' }
+    ],
+    files: [
+      {
+        id: 'file-m1',
+        name: 'Architectural_Dome_Blueprint.pdf',
+        size: '4.2 MB',
+        type: 'document',
+        extension: 'pdf',
+        uploadedAt: 'Jan 20, 2026',
+        dataUrl: 'data:text/plain;base64,U0dSTF9CRU9GSUxFX0NPTlRFTlQ='
+      },
+      {
+        id: 'file-m2',
+        name: 'Structural_Integrity_Audit_Report.pdf',
+        size: '1.8 MB',
+        type: 'document',
+        extension: 'pdf',
+        uploadedAt: 'Mar 02, 2026',
+        dataUrl: 'data:text/plain;base64,U0dSTF9CRU9GSUxFX0NPTlRFTlQ='
       }
-      if (i > 0) costs[str2.length] = lastValue;
-    }
-    return costs[str2.length];
-  };
-
-  return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength.toString());
-}
-
-function useAudioRecorder() {
-  const [isRecording, setIsRecording] = useState(false);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<number | null>(null);
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        setAudioBlob(blob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-      timerRef.current = window.setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
-    } catch (err) {
-      console.error('Error accessing microphone:', err);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-  };
-
-  const cancelRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-      setAudioBlob(null);
-    }
-  };
-
-  return { isRecording, startRecording, stopRecording, cancelRecording, audioBlob, recordingTime };
-}
-import { BlockEditor, Block as BlockData } from './components/BlockEditor';
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  // In a real app we'd show a toast here
-}
+    ],
+    milestones: getInitialMilestonesForProject('mosque-reconstruct')
+  },
+  {
+    id: 'deep-wells-sanitation',
+    title: 'Strategic Safe Arsenic-Free Tube-Wells',
+    category: 'Health',
+    description: 'Sinking 6 high-depth arsenic-filtration tube-wells to grant pure potable water access to disadvantaged sub-regions surrounding the Hazi Bari community fields.',
+    details: 'Groundwater arsenic testing remains highly essential in our community. We evaluate deep coordinates to find secure aquifers. A solid concrete protective housing is constructed over each completed drilling site to secure sanitization.',
+    targetFund: 300000,
+    raisedFund: 210000,
+    progress: 70,
+    status: 'In Progress',
+    location: 'North Hazi Bari & Outer Suburbs',
+    startedDate: 'Mar 10, 2026',
+    beneficiariesCount: 1200,
+    gradient: 'from-cyan-900 via-blue-950 to-slate-950',
+    logs: [
+      { id: 'log-w1', date: 'May 12, 2026', title: 'Site #3 Aquifer Discovered', description: 'Pure high yield flow identified at 840 feet depth. Zero trace arsenic verified by local council.', status: 'success' },
+      { id: 'log-w2', date: 'Apr 02, 2026', title: 'Site #1 & #2 Fully Certified', description: 'Local municipal engineers certified physical casing setups and pure mineral counts.', status: 'success' }
+    ],
+    files: [
+      {
+        id: 'file-w1',
+        name: 'Arsenic_Chemical_Assay_Certificates.pdf',
+        size: '1.1 MB',
+        type: 'document',
+        extension: 'pdf',
+        uploadedAt: 'Apr 05, 2026',
+        dataUrl: 'data:text/plain;base64,U0dSTF9CRU9GSUxFX0NPTlRFTlQ='
+      }
+    ],
+    milestones: getInitialMilestonesForProject('deep-wells-sanitation')
+  },
+  {
+    id: 'laptop-literacy-skills',
+    title: 'Hazi Bari Primary Education & IT Hub',
+    category: 'Education',
+    description: 'Developing a central computer lab containing 8 robust study workstations, internet connection, and organized basic software skill courses for local youth.',
+    details: 'Fostering IT and remote work skills changes the baseline economy. This program provides guided sessions in English, digital design, basic coding, and bookkeeping spreadsheet operations overseen by volunteer developers.',
+    targetFund: 650000,
+    raisedFund: 650000,
+    progress: 100,
+    status: 'Completed',
+    location: 'Community Library wing, Hall B',
+    startedDate: 'Feb 01, 2026',
+    completionDate: 'May 08, 2026',
+    beneficiariesCount: 450,
+    gradient: 'from-indigo-900 via-slate-900 to-zinc-950',
+    logs: [
+      { id: 'log-e1', date: 'May 08, 2026', title: 'Inaugural Graduation Ceremony', description: 'First batch of 35 students finished basic spreadsheet & web navigation modules.', status: 'success' },
+      { id: 'log-e2', date: 'Mar 15, 2026', title: 'Broadband Satellite Active', description: 'Fitted heavy-use dish allowing consistent 50mbps connection across terminal cells.', status: 'success' }
+    ],
+    files: [
+      {
+        id: 'file-e1',
+        name: 'Curriculum_Syllabus_2026.pdf',
+        size: '890 KB',
+        type: 'document',
+        extension: 'pdf',
+        uploadedAt: 'Feb 10, 2026',
+        dataUrl: 'data:text/plain;base64,U0dSTF9CRU9GSUxFX0NPTlRFTlQ='
+      }
+    ],
+    milestones: getInitialMilestonesForProject('laptop-literacy-skills')
+  },
+  {
+    id: 'winter-warmth-relief',
+    title: 'Emergency Winter Warmth Distribution',
+    category: 'Disaster Relief',
+    description: 'Procuring and transporting 1,500 heavy-insulated wool blankets and warm accessories directly to elderly and marginalized rural workers facing sudden freezing winter cycles.',
+    details: 'This crucial relief drive targeted the coldest settlements in the northern boundaries. Working closely with local volunteers, the Hazi Bari logistical cells secured streamlined audit-verified distribution logs to prevent overlapping distribution.',
+    targetFund: 250000,
+    raisedFund: 250000,
+    progress: 100,
+    status: 'Completed',
+    location: 'Greater Satkhira Bordering Zones',
+    startedDate: 'Dec 05, 2025',
+    completionDate: 'Jan 20, 2026',
+    beneficiariesCount: 1500,
+    gradient: 'from-amber-900 via-stone-900 to-slate-950',
+    logs: [
+      { id: 'log-r1', date: 'Jan 20, 2026', title: 'Wrapping Up Audited Purchase Ledger', description: 'Final financial sheets reviewed. Zero discrepancies reported inside relief treasury.', status: 'success' },
+      { id: 'log-r2', date: 'Dec 22, 2025', title: 'Stage 1 Distribution Completed', description: 'Dispatched and hand-delivered 800 heavy blanket packets to targeted farmers.', status: 'success' }
+    ],
+    files: [
+      {
+        id: 'file-r1',
+        name: 'Purchase_Receipts_Audit.pdf',
+        size: '2.4 MB',
+        type: 'document',
+        extension: 'pdf',
+        uploadedAt: 'Jan 22, 2026',
+        dataUrl: 'data:text/plain;base64,U0dSTF9CRU9GSUxFX0NPTlRFTlQ='
+      }
+    ],
+    milestones: getInitialMilestonesForProject('winter-warmth-relief')
+  }
+];
 
 export default function App() {
-  const [user, loading, error] = useAuthState(auth);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [activeTab, setActiveTab] = useState('members');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
-  const [activeCall, setActiveCall] = useState<Call | null>(null);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com';
-
-  const { isRecording, startRecording, stopRecording, cancelRecording, audioBlob, recordingTime } = useAudioRecorder();
-
-  useEffect(() => {
-    if (user) {
-      // Listen for incoming calls
-      const q = query(
-        collection(db, 'calls'),
-        where('receiverId', '==', user.uid),
-        where('status', '==', 'ringing'),
-        orderBy('createdAt', 'desc'),
-        limit(1)
-      );
-      const unsubscribe = onSnapshot(q, (snap) => {
-        if (!snap.empty) {
-          const callData = { id: snap.docs[0].id, ...snap.docs[0].data() } as Call;
-          setIncomingCall(callData);
-        } else {
-          setIncomingCall(null);
-        }
-      });
-
-      // Listen for active call updates
-      let unsubscribeActive: (() => void) | undefined;
-      if (activeCall) {
-        unsubscribeActive = onSnapshot(doc(db, 'calls', activeCall.id), (docSnap) => {
-          if (docSnap.exists()) {
-            const data = { id: docSnap.id, ...docSnap.data() } as Call;
-            if (data.status === 'ended' || data.status === 'rejected' || data.status === 'missed') {
-              setActiveCall(null);
-            } else {
-              setActiveCall(data);
-            }
-          } else {
-            setActiveCall(null);
-          }
-        });
+  // Application state with clean dynamic synchronization
+  const [projects, setProjects] = useState<DevelopmentProject[]>(() => {
+    const saved = localStorage.getItem('hazibari_projects');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Cleanly backport milestones if missing in old saved localStorage items
+        return parsed.map((p: any) => ({
+          ...p,
+          milestones: p.milestones || getInitialMilestonesForProject(p.id)
+        }));
+      } catch (err) {
+        return INITIAL_PROJECTS;
       }
-
-      return () => {
-        unsubscribe();
-        if (unsubscribeActive) unsubscribeActive();
-      };
     }
-  }, [user, activeCall?.id]);
-
-  useEffect(() => {
-    if (user && activeCall && activeCall.callerId === user.uid) {
-       // Support for caller to listen for answer
-       const unsubscribe = onSnapshot(doc(db, 'calls', activeCall.id), (docSnap) => {
-          if (docSnap.exists()) {
-            const data = { id: docSnap.id, ...docSnap.data() } as Call;
-            if (data.status === 'accepted') {
-               setActiveCall(data);
-            }
-          }
-       });
-       return () => unsubscribe();
-    }
-  }, [user, activeCall?.id]);
-
-  useEffect(() => {
-    if (user && isAdmin) {
-      const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(10));
-      const unsubscribe = onSnapshot(q, (snap) => {
-        setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
-      });
-      return () => unsubscribe();
-    }
-  }, [user, isAdmin]);
-
-  useEffect(() => {
-    if (user) {
-      const docRef = doc(db, 'users', user.uid);
-      const unsubscribe = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
-        } else {
-          // New user creation
-          const newProfile: Partial<UserProfile> = {
-            uid: user.uid,
-            displayName: user.displayName || 'Member',
-            email: user.email || '',
-            photoURL: user.photoURL || undefined,
-            role: 'member',
-            isApproved: false,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          };
-          setDoc(docRef, newProfile).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`));
-        }
-      }, (err) => handleFirestoreError(err, OperationType.GET, `users/${user.uid}`));
-      return () => unsubscribe();
-    }
-  }, [user]);
-
-  const handleStartCall = async (receiverId: string, type: 'voice' | 'video') => {
-    if (!profile) return;
-    try {
-      const callData = {
-        callerId: profile.uid,
-        receiverId: receiverId,
-        type: type,
-        status: 'ringing',
-        createdAt: serverTimestamp()
-      };
-      const docRef = await addDoc(collection(db, 'calls'), callData);
-      setActiveCall({ id: docRef.id, ...callData } as Call);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'calls');
-    }
-  };
-
-  const handleAcceptCall = async (call: Call) => {
-    try {
-      await updateDoc(doc(db, 'calls', call.id), {
-        status: 'accepted',
-        acceptedAt: serverTimestamp()
-      });
-      setActiveCall(call);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `calls/${call.id}`);
-    }
-  };
-
-  const handleRejectCall = async (call: Call) => {
-    try {
-      await updateDoc(doc(db, 'calls', call.id), {
-        status: 'rejected',
-        endedAt: serverTimestamp()
-      });
-      setIncomingCall(null);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `calls/${call.id}`);
-    }
-  };
-
-  const handleEndCall = async (call: Call) => {
-    try {
-      await updateDoc(doc(db, 'calls', call.id), {
-        status: 'ended',
-        endedAt: serverTimestamp()
-      });
-      setActiveCall(null);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `calls/${call.id}`);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen grid place-items-center bg-foundation-200">
-        <div className="w-12 h-12 border-4 border-foundation-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <LandingPage onSignIn={signInWithGoogle} />;
-  }
-
-  if (profile && !profile.houseName) {
-    return <RegistrationPage profile={profile} />;
-  }
-
-  if (profile && !profile.isApproved && profile.role !== 'admin' && profile.role !== 'director' && profile.email !== 'mdmonirahamedarfin@gmail.com') {
-    return (
-      <div className="min-h-screen bg-foundation-100 flex items-center justify-center p-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 text-center border border-foundation-200"
-        >
-          <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Clock size={40} className="text-amber-600 animate-pulse" />
-          </div>
-          <h2 className="text-2xl font-display font-bold text-foundation-900 mb-4">Registration Pending</h2>
-          <p className="text-foundation-600 text-sm leading-relaxed mb-8">
-            আসসালামু আলাইকুম, <strong>{profile.displayName}</strong>। আপনার মেম্বারশিপ আবেদনটি সফলভাবে জমা হয়েছে। আমাদের অ্যাডমিন প্যানেল আপনার দেওয়া তথ্য যাচাই করছে। 
-          </p>
-          <div className="bg-foundation-50 rounded-2xl p-4 mb-8 border border-foundation-100">
-             <p className="text-[10px] text-foundation-400 font-black uppercase tracking-widest mb-1">Application ID</p>
-             <p className="text-xs font-mono font-bold text-foundation-900">{profile.uid.substring(0, 8).toUpperCase()}</p>
-          </div>
-          <button 
-            onClick={() => auth.signOut()}
-            className="w-full py-4 bg-foundation-900 text-white rounded-xl font-bold hover:bg-foundation-800 transition-all"
-          >
-            Log Out
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-foundation-200 flex">
-      {/* Sidebar */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-foundation-900 text-white transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <div className="p-6">
-          <h1 className="text-xl font-display font-bold text-foundation-400">HAZI BARI</h1>
-          <p className="text-[10px] tracking-widest text-foundation-600 uppercase mb-8">Foundation</p>
-          
-          <nav className="space-y-1">
-            <NavItem 
-              icon={<Home size={20} />} 
-              label="Family Feed" 
-              active={activeTab === 'feed'} 
-              onClick={() => { setActiveTab('feed'); setIsSidebarOpen(false); }} 
-            />
-            <NavItem 
-              icon={<GitGraph size={20} />} 
-              label="Bongsho Tree" 
-              active={activeTab === 'tree'} 
-              onClick={() => { setActiveTab('tree'); setIsSidebarOpen(false); }} 
-            />
-            <NavItem 
-              icon={<Users size={20} />} 
-              label="Members" 
-              active={activeTab === 'members'} 
-              onClick={() => { setActiveTab('members'); setIsSidebarOpen(false); }} 
-            />
-            <NavItem 
-              icon={<CreditCard size={20} />} 
-              label="Subscriptions" 
-              active={activeTab === 'finance'} 
-              onClick={() => { setActiveTab('finance'); setIsSidebarOpen(false); }} 
-            />
-            <NavItem 
-              icon={<ShieldCheck size={20} />} 
-              label="Committee" 
-              active={activeTab === 'committee'} 
-              onClick={() => { setActiveTab('committee'); setIsSidebarOpen(false); }} 
-            />
-            <NavItem 
-              icon={<UserIcon size={20} />} 
-              label="My Profile" 
-              active={activeTab === 'profile'} 
-              onClick={() => { setActiveTab('profile'); setIsSidebarOpen(false); }} 
-            />
-            <NavItem 
-              icon={<MessageCircle size={20} />} 
-              label="Messages" 
-              active={activeTab === 'messages'} 
-              onClick={() => { setActiveTab('messages'); setIsSidebarOpen(false); }} 
-            />
-          </nav>
-        </div>
-
-        <div className="absolute bottom-0 w-full p-6 bg-black/20">
-          <button 
-            onClick={() => auth.signOut()}
-            className="flex items-center gap-3 text-foundation-400 hover:text-white transition-colors w-full"
-          >
-            <LogOut size={18} />
-            <span className="text-sm font-medium">Log out</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-foundation-300 flex items-center justify-between px-6 sticky top-0 z-40">
-          <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-foundation-800">
-            <Menu size={24} />
-          </button>
-          
-          <div className="flex-1 px-4">
-            <h2 className="text-lg font-medium text-foundation-900 capitalize">{activeTab.replace('-', ' ')}</h2>
-          </div>
-
-          <div className="flex items-center gap-4 relative">
-            <button 
-              onClick={() => setIsNotifOpen(!isNotifOpen)}
-              className="p-2 text-foundation-600 hover:bg-foundation-200 rounded-full transition-colors relative"
-            >
-              <Bell size={20} />
-              {notifications.filter(n => !n.read).length > 0 && (
-                <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></div>
-              )}
-            </button>
-
-            <AnimatePresence>
-              {isNotifOpen && (
-                <NotificationDropdown 
-                  notifications={notifications} 
-                  onClose={() => setIsNotifOpen(false)} 
-                />
-              )}
-            </AnimatePresence>
-
-            <img src={profile?.photoURL || undefined} alt="" className="w-8 h-8 rounded-full border border-foundation-300" />
-          </div>
-        </header>
-
-        {!profile?.isApproved && profile?.role !== 'admin' && (
-          <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
-              <Clock size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-amber-900">Account Pending Approval</p>
-              <p className="text-[10px] text-amber-700">Your profile is being reviewed by the Haji Bari Foundation directors. Some features will be restricted until verified.</p>
-            </div>
-          </div>
-        )}
-
-        <section className="p-6 max-w-4xl mx-auto w-full">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {activeTab === 'feed' && <Feed profile={profile} setActiveTab={setActiveTab} setActiveConversationId={setActiveConversationId} />}
-              {activeTab === 'tree' && <FamilyTree profile={profile} />}
-              {activeTab === 'members' && <MembersList profile={profile} setActiveTab={setActiveTab} setActiveConversationId={setActiveConversationId} isAdmin={profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com'} />}
-              {activeTab === 'committee' && <Committee profile={profile} isAdmin={profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com'} />}
-              {activeTab === 'profile' && <ProfileComponent profile={profile} />}
-              {activeTab === 'finance' && <Subscriptions profile={profile} />}
-              {activeTab === 'messages' && (
-                <Messenger 
-                  profile={profile} 
-                  onStartCall={handleStartCall} 
-                  initialConversationId={activeConversationId}
-                  onClearInitialConv={() => setActiveConversationId(null)}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </section>
-
-        <AnimatePresence>
-          {incomingCall && !activeCall && (
-            <IncomingCallOverlay 
-              call={incomingCall} 
-              onAccept={() => handleAcceptCall(incomingCall)} 
-              onReject={() => handleRejectCall(incomingCall)} 
-            />
-          )}
-          {activeCall && (
-            <ActiveCallOverlay 
-              call={activeCall} 
-              profile={profile}
-              onEnd={() => handleEndCall(activeCall)} 
-            />
-          )}
-        </AnimatePresence>
-      </main>
-    </div>
-  );
-}
-
-function IncomingCallOverlay({ call, onAccept, onReject }: { call: Call, onAccept: () => void, onReject: () => void }) {
-  const [callerProfile, setCallerProfile] = useState<UserProfile | null>(null);
-
-  useEffect(() => {
-    getDoc(doc(db, 'users', call.callerId)).then(snap => {
-      if (snap.exists()) setCallerProfile(snap.data() as UserProfile);
-    });
-  }, [call.callerId]);
-
-  return (
-    <motion.div 
-      initial={{ y: 100, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 100, opacity: 0 }}
-      className="fixed bottom-6 right-6 z-[100] w-80 bg-foundation-900 text-white rounded-3xl shadow-2xl p-6 border border-white/10 ring-4 ring-foundation-500/20"
-    >
-      <div className="flex flex-col items-center text-center">
-        <div className="relative mb-4">
-          <div className="absolute inset-0 bg-indigo-500 rounded-full animate-ping opacity-20"></div>
-          <img 
-            src={callerProfile?.photoURL || `https://ui-avatars.com/api/?name=${callerProfile?.displayName || '...'}`} 
-            className="w-20 h-20 rounded-full border-4 border-foundation-50 relative z-10" 
-            alt="" 
-          />
-        </div>
-        <h4 className="text-lg font-display font-bold">{callerProfile?.displayName || 'Incoming Call...'}</h4>
-        <p className="text-[10px] text-foundation-400 uppercase tracking-widest mt-1 mb-6">
-          Incoming {call.type} call
-        </p>
-        
-        <div className="flex gap-4 w-full">
-          <button 
-            onClick={onReject}
-            className="flex-1 bg-red-500 hover:bg-red-600 p-3 rounded-2xl flex items-center justify-center transition-all shadow-lg active:scale-95"
-          >
-            <PhoneOff size={20} />
-          </button>
-          <button 
-            onClick={onAccept}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-600 p-3 rounded-2xl flex items-center justify-center transition-all shadow-lg active:scale-95"
-          >
-            <Phone size={20} className="animate-bounce" />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function ActiveCallOverlay({ call, onEnd, profile }: { call: Call, onEnd: () => void, profile: UserProfile | null }) {
-  const [otherProfile, setOtherProfile] = useState<UserProfile | null>(null);
-  const otherId = call.callerId === profile?.uid ? call.receiverId : call.callerId;
-
-  useEffect(() => {
-    getDoc(doc(db, 'users', otherId)).then(snap => {
-      if (snap.exists()) setOtherProfile(snap.data() as UserProfile);
-    });
-  }, [otherId]);
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      className="fixed inset-0 z-[200] bg-foundation-900 flex flex-col items-center justify-center p-6"
-    >
-      <div className="absolute inset-0 opacity-10 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-500 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500 rounded-full blur-[120px]"></div>
-      </div>
-
-      <div className="relative z-10 flex flex-col items-center text-center max-w-sm w-full">
-        {call.status === 'ringing' ? (
-          <div className="mb-12">
-            <div className="relative">
-               <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
-               <img 
-                 src={otherProfile?.photoURL || undefined} 
-                 className="w-32 h-32 rounded-full border-4 border-foundation-50 shadow-2xl relative z-10" 
-                 alt="" 
-               />
-            </div>
-            <h3 className="text-2xl font-display font-bold text-white mt-6">Calling...</h3>
-            <p className="text-foundation-400 text-sm mt-2">{otherProfile?.displayName}</p>
-          </div>
-        ) : (
-          <div className="w-full flex-1 flex flex-col items-center justify-center">
-            {call.type === 'video' ? (
-              <div className="w-full aspect-[3/4] bg-foundation-800 rounded-3xl relative overflow-hidden shadow-2xl border border-white/10 mb-8">
-                <img src={otherProfile?.photoURL} className="w-full h-full object-cover opacity-50 blur-sm" alt="" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                   <div className="flex flex-col items-center gap-4">
-                      <img src={otherProfile?.photoURL} className="w-24 h-24 rounded-full border-2 border-white/20" alt="" />
-                      <p className="text-white font-bold text-lg">{otherProfile?.displayName}</p>
-                   </div>
-                </div>
-                <div className="absolute bottom-4 right-4 w-24 h-32 bg-white/10 rounded-xl border border-white/20 backdrop-blur-md overflow-hidden">
-                   <img src={profile?.photoURL} className="w-full h-full object-cover" alt="" />
-                </div>
-                <div className="absolute top-4 left-4 flex gap-2">
-                   <div className="px-2 py-1 bg-red-500 rounded text-[8px] font-bold text-white uppercase tracking-widest flex items-center gap-1">
-                      <div className="w-1 h-1 bg-white rounded-full animate-pulse"></div> LIVE
-                   </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mb-12">
-                 <img src={otherProfile?.photoURL} className="w-40 h-40 rounded-full border-4 border-indigo-500/30 shadow-2xl mx-auto" alt="" />
-                 <h3 className="text-2xl font-display font-bold text-white mt-8">{otherProfile?.displayName}</h3>
-                 <p className="text-emerald-400 text-sm font-bold mt-2 uppercase tracking-widest flex items-center justify-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></div> Active Call
-                 </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-6 w-full justify-center">
-          <button className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center transition-all backdrop-blur-md">
-             <MicOff size={20} />
-          </button>
-          {call.type === 'video' && (
-            <button className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center transition-all backdrop-blur-md">
-               <VideoOff size={20} />
-            </button>
-          )}
-          <button 
-            onClick={onEnd}
-            className="w-12 h-12 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-all shadow-xl active:scale-95"
-          >
-             <PhoneOff size={24} />
-          </button>
-          <button className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center transition-all backdrop-blur-md">
-             <Volume2 size={20} />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function NavItem({ icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`
-        flex items-center gap-4 w-full p-3 rounded-lg transition-all
-        ${active ? 'bg-foundation-500 text-white shadow-md shadow-foundation-900/50' : 'text-foundation-400 hover:bg-white/5 hover:text-white'}
-      `}
-    >
-      {icon}
-      <span className="font-medium text-sm">{label}</span>
-    </button>
-  );
-}
-
-function LandingPage({ onSignIn }: { onSignIn: () => void }) {
-  return (
-    <div className="min-h-screen bg-foundation-200 flex flex-col items-center justify-center p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-foundation-300"
-      >
-        <div className="bg-foundation-900 p-12 text-center text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-foundation-500/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-          <div className="relative">
-            <h1 className="text-3xl font-display mb-2">HAZI BARI</h1>
-            <p className="text-xs uppercase tracking-[0.3em] font-medium text-foundation-400">Foundation</p>
-            <div className="mt-4 w-12 h-1 bg-foundation-500 mx-auto rounded-full"></div>
-            <p className="mt-6 text-foundation-300 text-sm italic">"Let's Run Together"</p>
-          </div>
-        </div>
-
-        <div className="p-10 space-y-6">
-          <div className="space-y-2 text-center">
-            <h2 className="text-xl font-bold text-foundation-900">Welcome Back</h2>
-            <p className="text-foundation-600 text-sm">Sign in to stay connected with the family foundation.</p>
-          </div>
-
-          <button 
-            onClick={onSignIn}
-            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-foundation-300 p-4 rounded-xl font-semibold text-foundation-900 hover:bg-foundation-200 transition-all active:scale-95"
-          >
-            <img src="https://www.google.com/favicon.ico" alt="google" className="w-5 h-5" />
-            Continue with Google
-          </button>
-
-          <p className="text-[10px] text-center text-foundation-500 uppercase tracking-widest mt-8">
-            Established for Unity & Welfare
-          </p>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function RegistrationPage({ profile }: { profile: UserProfile }) {
-  const [isSmartScanOpen, setIsSmartScanOpen] = useState(true);
-  const [scannedData, setScannedData] = useState<any>(null);
-  const [formData, setFormData] = useState({
-    displayName: '',
-    photoURL: '',
-    fatherName: '',
-    motherName: '',
-    houseName: '',
-    village: '',
-    district: '',
-    nidNumber: '',
-    familyHead: '',
-    mobile: ''
+    return INITIAL_PROJECTS;
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
 
-  const onPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      const base64 = await handleImageUpload(file);
-      setFormData(prev => ({ ...prev, photoURL: base64 }));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsUploading(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(true); // Admin toggle enabled naturally
+  
+  // Filtering and Searching parameters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedStatus, setSelectedStatus] = useState<string>('All');
+
+  // Interactive Create Project State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newCategory, setNewCategory] = useState<'Infrastructure' | 'Health' | 'Education' | 'Disaster Relief' | 'Agriculture'>('Infrastructure');
+  const [newDescription, setNewDescription] = useState('');
+  const [newDetails, setNewDetails] = useState('');
+  const [newTargetFund, setNewTargetFund] = useState('');
+  const [newRaisedFund, setNewRaisedFund] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newBeneficiaries, setNewBeneficiaries] = useState('');
+  const [newGradient, setNewGradient] = useState('from-indigo-900 via-slate-950 to-emerald-950');
+
+  // Interactive Live Add Progress Update Log state
+  const [logTitle, setLogTitle] = useState('');
+  const [logDesc, setLogDesc] = useState('');
+  const [logStatus, setLogStatus] = useState<'info' | 'success' | 'alert'>('success');
+
+  // Interactive Milestone states
+  const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
+  const [newMilestoneDate, setNewMilestoneDate] = useState('');
+  const [newMilestoneStatus, setNewMilestoneStatus] = useState<'Pending' | 'In Progress' | 'Completed'>('Pending');
+
+  // File Upload State
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Dynamic status edits in sidebar
+  const [editingProgressValue, setEditingProgressValue] = useState<number>(0);
+  const [editingStatusValue, setEditingStatusValue] = useState<'Planning' | 'In Progress' | 'On Hold' | 'Completed'>('In Progress');
+
+  // Lightbox for base64 images
+  const [activeLightboxImage, setActiveLightboxImage] = useState<{ name: string; url: string } | null>(null);
+
+  // Google User Auth States (নতুন ইউজার এ্যাপ গুগল সাইন আপ)
+  const [currentUser, setCurrentUser] = useState<PortalUser | null>(() => {
+    const saved = localStorage.getItem('hazibari_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showOneTap, setShowOneTap] = useState(false);
+  const [oneTapDismissed, setOneTapDismissed] = useState(() => {
+    return localStorage.getItem('hazibari_onetap_dismissed') === 'true';
+  });
+
+  // Custom User Feedback/Discussion State
+  const [projectComments, setProjectComments] = useState<Record<string, CommunityComment[]>>(() => {
+    const saved = localStorage.getItem('hazibari_comments');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (err) {
+        return {};
+      }
+    }
+    // Pre-seed some beautiful comments
+    return {
+      'mosque-reconstruct': [
+        {
+          id: 'comm-1',
+          userName: 'Monir Ahamed Arfin',
+          userAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100',
+          text: 'মাশাল্লাহ! খুব সুন্দর কাজ হচ্ছে। পরিবেশবান্ধব কুলিং ফিটিংস সত্যিই আধুনিক ও যুগোপযোগী উদ্যোগ।',
+          date: 'May 16, 2026',
+          email: 'mdmonirahamedarfin@gmail.com'
+        }
+      ]
+    };
+  });
+
+  // Trigger Google One Tap slider after 2 seconds if user is not logged in and not dismissed
+  useEffect(() => {
+    let timer: any = null;
+    if (!currentUser && !oneTapDismissed) {
+      timer = setTimeout(() => {
+        setShowOneTap(true);
+      }, 2000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [currentUser, oneTapDismissed]);
+
+  // Persistent System Saving
+  useEffect(() => {
+    localStorage.setItem('hazibari_projects', JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('hazibari_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('hazibari_user');
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem('hazibari_comments', JSON.stringify(projectComments));
+  }, [projectComments]);
+
+  const selectedProject = projects.find(p => p.id === selectedProjectId) || projects[0];
+
+  useEffect(() => {
+    if (selectedProject) {
+      setEditingProgressValue(selectedProject.progress);
+      setEditingStatusValue(selectedProject.status);
+    }
+  }, [selectedProjectId]);
+
+  // Status Colors styling helpers
+  const getCategoryColor = (cat: string) => {
+    switch (cat) {
+      case 'Infrastructure': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+      case 'Health': return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+      case 'Education': return 'bg-violet-500/10 text-violet-400 border-violet-500/20';
+      case 'Disaster Relief': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+      case 'Agriculture': return 'bg-lime-500/10 text-lime-400 border-lime-500/20';
+      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
     }
   };
 
-  const handleAIResult = (child: string, father: string, fullSuggestion?: any) => {
-    setScannedData(fullSuggestion);
-    setIsSmartScanOpen(false);
-    
-    // Function to handle missing data
-    const getValue = (val: any) => (val && val !== 'null' && val !== 'NULL' ? val : 'তথ্য পাওয়া যায়নি');
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Completed': return 'bg-emerald-500 text-white font-semibold text-xs border border-emerald-600';
+      case 'In Progress': return 'bg-blue-600 text-white font-semibold text-xs border border-blue-700 animate-pulse-slow';
+      case 'On Hold': return 'bg-amber-500 text-slate-950 font-semibold text-xs border border-amber-600';
+      case 'Planning': return 'bg-slate-600 text-slate-100 font-semibold text-xs border border-slate-700';
+      default: return 'bg-slate-200 text-slate-800 text-xs';
+    }
+  };
 
-    setFormData(prev => ({
-      ...prev,
-      displayName: getValue(fullSuggestion?.subject?.name),
-      fatherName: getValue(fullSuggestion?.father?.name),
-      motherName: getValue(fullSuggestion?.mother?.name),
-      village: getValue(fullSuggestion?.village),
-      district: getValue(fullSuggestion?.district),
-      nidNumber: getValue(fullSuggestion?.nidNumber),
-      houseName: getValue(fullSuggestion?.house),
+  const getTimelineLogIconStyle = (status: 'info' | 'success' | 'alert') => {
+    switch (status) {
+      case 'success': return 'bg-emerald-500/20 text-emerald-400 ring-4 ring-emerald-505/10';
+      case 'info': return 'bg-blue-500/20 text-blue-400 ring-4 ring-blue-505/10';
+      case 'alert': return 'bg-rose-500/20 text-rose-400 ring-4 ring-rose-505/10';
+    }
+  };
+
+  // Helper calculation metrics
+  const totalProjectsCount = projects.length;
+  const ongoingProjectsCount = projects.filter(p => p.status === 'In Progress').length;
+  const completedProjectsCount = projects.filter(p => p.status === 'Completed').length;
+  const totalRaisedValue = projects.reduce((sum, p) => sum + p.raisedFund, 0);
+  const totalTargetValue = projects.reduce((sum, p) => sum + p.targetFund, 0);
+  const overallRaisedPercentage = totalTargetValue > 0 ? Math.round((totalRaisedValue / totalTargetValue) * 100) : 0;
+  
+  const totalFilesCount = projects.reduce((sum, p) => sum + p.files.length, 0);
+
+  // Filtering Logic
+  const filteredProjects = projects.filter(p => {
+    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          p.location.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+    const matchesStatus = selectedStatus === 'All' || p.status === selectedStatus;
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
+
+  // Action: Add Progress Log
+  const handleAddLog = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!logTitle.trim() || !logDesc.trim()) return;
+
+    const newLogItem: ProjectLog = {
+      id: 'log-' + Date.now(),
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      title: logTitle,
+      description: logDesc,
+      status: logStatus
+    };
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === selectedProjectId) {
+        return {
+          ...p,
+          logs: [newLogItem, ...p.logs]
+        };
+      }
+      return p;
+    }));
+
+    setLogTitle('');
+    setLogDesc('');
+    confetti({
+      particleCount: 80,
+      spread: 60,
+      origin: { y: 0.8 },
+      colors: ['#059669', '#10b981', '#34d399']
+    });
+  };
+
+  // Action: Delete Progress Log
+  const handleDeleteLog = (projectId: string, logId: string) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          logs: p.logs.filter(l => l.id !== logId)
+        };
+      }
+      return p;
     }));
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!profile) return;
-    setIsSubmitting(true);
-    try {
-      // Auto-linking logic: check if fatherName exists in the system
-      let autoFatherId = undefined;
-      const q = query(collection(db, 'users'), where('displayName', '==', formData.fatherName), limit(1));
-      const fatherSnap = await getDocs(q);
-      if (!fatherSnap.empty) {
-        autoFatherId = fatherSnap.docs[0].id;
-      }
-
-      const slug = formData.displayName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
-
-      const updateData = {
-        ...formData,
-        uid: profile.uid,
-        memberSlug: slug,
-        memberId: `HB-${formData.displayName.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        fatherId: autoFatherId || profile.fatherId,
-        isApproved: false,
-        role: 'member' as const,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'users', profile.uid), updateData, { merge: true });
-
-      // Create notification for admins
-      await addDoc(collection(db, 'notifications'), {
-        type: 'registration',
-        userId: profile.uid,
-        userName: formData.displayName || profile.displayName,
-        userPhotoURL: profile.photoURL || '',
-        message: `${formData.displayName || profile.displayName} has applied for membership.${autoFatherId ? ' System auto-linked their lineage.' : ''}`,
-        read: false,
-        createdAt: serverTimestamp()
-      });
-      
-      window.location.reload();
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${profile.uid}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  if (isSmartScanOpen) {
-    return (
-      <div className="min-h-screen bg-foundation-100 p-4 sm:p-8 flex items-center justify-center">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-2xl w-full bg-white rounded-[2.5rem] shadow-2xl border border-foundation-200 overflow-hidden"
-        >
-          <div className="p-10 border-b border-foundation-100 bg-indigo-900 text-white relative overflow-hidden text-center">
-             <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
-             <div className="relative z-10 space-y-2">
-               <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/30 backdrop-blur-sm">
-                 <ShieldCheck size={24} className="text-emerald-400" />
-               </div>
-               <h2 className="text-3xl font-display">Identity Verification</h2>
-               <p className="text-indigo-200 text-sm font-medium">Verify your identity to join Hazi Bari Foundation</p>
-             </div>
-          </div>
-          
-          <div className="p-10">
-            <div className="mb-10 text-center space-y-4">
-              <h3 className="text-xl font-bold text-foundation-900">Step 1: Smart Document Scan</h3>
-              <p className="text-sm text-foundation-500 leading-relaxed max-w-md mx-auto">
-                Scan your NID, Birth Certificate, or Passport. Our AI will detect your lineage and suggest root connections automatically.
-              </p>
-            </div>
-
-            <AIBongshoSuite onResult={handleAIResult} />
-
-            <div className="mt-12 pt-8 border-t border-foundation-100 text-center">
-              <button 
-                onClick={() => setIsSmartScanOpen(false)}
-                className="group flex items-center justify-center gap-2 mx-auto text-foundation-400 text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all"
-              >
-                Skip to manual form <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-foundation-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-2xl mx-auto">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-foundation-100"
-        >
-          <div className="bg-gradient-to-br from-indigo-900 to-foundation-900 px-10 py-12 text-white">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-12 h-12 bg-white/10 rounded-2xl backdrop-blur-md flex items-center justify-center border border-white/20">
-                <UserPlus size={24} />
-              </div>
-              <div>
-                <p className="text-indigo-300 text-[10px] font-black uppercase tracking-widest mb-1">Step 2: Profile Setup</p>
-                <h2 className="text-3xl font-display">Review & Submit</h2>
-              </div>
-            </div>
-            <p className="text-indigo-200 text-sm leading-relaxed max-w-md">
-              We've pre-filled your details from the document scan. Please correct any inaccuracies before submitting.
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="p-10 space-y-8">
-            <div className="flex flex-col items-center gap-4 py-4 bg-foundation-50 rounded-3xl border-2 border-dashed border-foundation-200">
-              <div className="relative group">
-                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-lg relative bg-white">
-                  {formData.photoURL ? (
-                    <img src={formData.photoURL} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-foundation-300">
-                      <Camera size={40} />
-                    </div>
-                  )}
-                  {isUploading && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
-                </div>
-                <label className="absolute bottom-0 right-0 w-8 h-8 bg-indigo-600 rounded-full border-2 border-white flex items-center justify-center text-white cursor-pointer hover:bg-indigo-700 transition-colors shadow-md">
-                  <Camera size={14} />
-                  <input type="file" className="hidden" accept="image/*" onChange={onPhotoUpload} />
-                </label>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] font-black uppercase tracking-widest text-foundation-400">Profile Photo</p>
-                <p className="text-[9px] text-foundation-400 mt-0.5">Click camera icon to upload</p>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 gap-6">
-                <Input 
-                  label="Full Name (English)" 
-                  required 
-                  value={formData.displayName} 
-                  onChange={(e: any) => setFormData({...formData, displayName: e.target.value})}
-                />
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <Input 
-                    label="Father's Name" 
-                    required 
-                    value={formData.fatherName} 
-                    onChange={(e: any) => setFormData({...formData, fatherName: e.target.value})} 
-                  />
-                  <Input 
-                    label="Mother's Name" 
-                    value={formData.motherName} 
-                    onChange={(e: any) => setFormData({...formData, motherName: e.target.value})} 
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <Input 
-                    label="Village (গ্রাম)" 
-                    required 
-                    value={formData.village} 
-                    onChange={(e: any) => setFormData({...formData, village: e.target.value})} 
-                  />
-                  <Input 
-                    label="District (জেলা)" 
-                    required 
-                    value={formData.district} 
-                    onChange={(e: any) => setFormData({...formData, district: e.target.value})} 
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <Input 
-                    label="House Name (বাড়ির নাম)" 
-                    required 
-                    value={formData.houseName} 
-                    onChange={(e: any) => setFormData({...formData, houseName: e.target.value})} 
-                  />
-                  <Input 
-                    label="Voter ID / NID Index (ভোটার আইডি নাম্বার)" 
-                    value={formData.nidNumber} 
-                    onChange={(e: any) => setFormData({...formData, nidNumber: e.target.value})} 
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <Input 
-                    label="Head of Family (পরিবারের কর্তা)" 
-                    required 
-                    value={formData.familyHead} 
-                    onChange={(e: any) => setFormData({...formData, familyHead: e.target.value})} 
-                  />
-                  <Input 
-                    label="Mobile Number (মোবাইল নম্বর)" 
-                    required 
-                    value={formData.mobile} 
-                    onChange={(e: any) => setFormData({...formData, mobile: e.target.value})} 
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-foundation-100">
-              <button 
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full bg-indigo-600 text-white rounded-2xl px-8 py-5 text-sm font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Processing Application...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle size={18} />
-                    Register as a family member
-                  </>
-                )}
-              </button>
-              <p className="text-center text-[10px] text-foundation-400 mt-4 uppercase font-bold">
-                Your application will be reviewed by foundation administrators
-              </p>
-            </div>
-          </form>
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-
-function Input({ label, ...props }: any) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-bold text-foundation-700 uppercase tracking-wider">{label}</label>
-      <input {...props} className="w-full p-3 rounded-lg border-2 border-foundation-200 focus:border-foundation-500 focus:outline-none transition-all placeholder-foundation-400" />
-    </div>
-  );
-}
-
-function Feed({ profile, setActiveTab, setActiveConversationId }: { profile: UserProfile | null, setActiveTab: (tab: string) => void, setActiveConversationId: (cid: string) => void }) {
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [newPost, setNewPost] = useState('');
-  const [editorBlocks, setEditorBlocks] = useState<BlockData[]>([]);
-  const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [fullScreenMedia, setFullScreenMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
-  const [editorMode, setEditorMode] = useState<'classic' | 'blocks'>('blocks');
-  const [isRefining, setIsRefining] = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
-  const [recordedAudio, setRecordedAudio] = useState<string | null>(null);
-  const [postType, setPostType] = useState<Post['type']>('news');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [projectData, setProjectData] = useState({
-    startDate: '',
-    endDate: '',
-    budget: '',
-    summary: ''
-  });
-  const [projectBreakdown, setProjectBreakdown] = useState<BudgetLineItem[]>([]);
-  const [breakdownItem, setBreakdownItem] = useState('');
-  const [breakdownAmount, setBreakdownAmount] = useState('');
-
-  useEffect(() => {
-    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(50));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Post)));
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'posts'));
-    return () => unsubscribe();
-  }, []);
-
-  const handlePost = async () => {
-    if ((!newPost.trim() && editorBlocks.length === 0 && !recordedAudio && !generatedImageUrl && !uploadedImageUrl) || !profile) return;
-    try {
-      const postPayload: any = {
-        authorId: profile.uid,
-        authorName: profile.displayName,
-        authorPhotoURL: profile.photoURL || '',
-        content: newPost || (recordedAudio ? '[Voice Message]' : (generatedImageUrl || uploadedImageUrl ? '[Image]' : (editorBlocks.length > 0 ? '[Block Post]' : ''))),
-        blocks: editorBlocks,
-        type: postType,
-        likes: editingPostId ? undefined : [],
-        commentCount: editingPostId ? undefined : 0,
-        updatedAt: serverTimestamp()
-      };
-
-      if (!editingPostId) {
-        postPayload.createdAt = serverTimestamp();
-      }
-
-      if (recordedAudio) {
-        postPayload.audioUrl = recordedAudio;
-      }
-
-      const finalImageUrl = uploadedImageUrl || generatedImageUrl;
-      if (finalImageUrl) {
-        postPayload.imageUrl = finalImageUrl;
-      }
-
-      if (postType === 'project') {
-        postPayload.projectStartDate = projectData.startDate;
-        postPayload.projectEndDate = projectData.endDate;
-        postPayload.projectBudget = parseFloat(projectData.budget) || 0;
-        postPayload.projectSummary = projectData.summary;
-        postPayload.projectProgress = editingPostId ? undefined : 0;
-        postPayload.projectBudgetBreakdown = projectBreakdown;
-      }
-
-      // Remove undefined fields for update
-      if (editingPostId) {
-        Object.keys(postPayload).forEach(key => postPayload[key] === undefined && delete postPayload[key]);
-        await updateDoc(doc(db, 'posts', editingPostId), postPayload);
-      } else {
-        await addDoc(collection(db, 'posts'), postPayload);
-      }
-
-      setNewPost('');
-      setEditorBlocks([]);
-      setEditingPostId(null);
-      setRecordedAudio(null);
-      setGeneratedImageUrl(null);
-      setUploadedImageUrl(null);
-      setProjectData({ startDate: '', endDate: '', budget: '', summary: '' });
-      setProjectBreakdown([]);
-    } catch (err) {
-      handleFirestoreError(err, editingPostId ? OperationType.UPDATE : OperationType.WRITE, 'posts');
-    }
-  };
-
-  const handleEditPost = (post: Post) => {
-    setEditingPostId(post.id);
-    setNewPost(post.content);
-    setEditorBlocks(post.blocks || []);
-    setPostType(post.type);
-    setRecordedAudio(post.audioUrl || null);
-    if (post.imageUrl) {
-      setUploadedImageUrl(post.imageUrl);
-    }
-    if (post.type === 'project') {
-      setProjectData({
-        startDate: post.projectStartDate || '',
-        endDate: post.projectEndDate || '',
-        budget: post.projectBudget?.toString() || '',
-        summary: post.projectSummary || ''
-      });
-      setProjectBreakdown(post.projectBudgetBreakdown || []);
-    }
-    
-    // Switch editor mode based on content
-    if (post.blocks && post.blocks.length > 0) {
-      setEditorMode('blocks');
-    } else {
-      setEditorMode('classic');
-    }
-
-    // Scroll to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleDeletePost = async (postId: string) => {
-    if (!window.confirm('Are you sure you want to delete this post?')) return;
-    try {
-      await deleteDoc(doc(db, 'posts', postId));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `posts/${postId}`);
-    }
-  };
-
-  const handleGenerateImage = async () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = newPost;
-    const plainText = tempDiv.textContent || tempDiv.innerText || "";
-    
-    if (!plainText.trim()) {
-      alert("Please write something first to generate a relevant image!");
-      return;
-    }
-
-    setIsGeneratingImage(true);
-    const imageUrl = await generatePostImage(plainText);
-    setIsGeneratingImage(false);
-
-    if (imageUrl) {
-      if (editorMode === 'blocks') {
-        const newBlock: BlockData = {
-          id: Math.random().toString(36).substr(2, 9),
-          type: 'image',
-          content: imageUrl,
+  // Action: Delete Attached File
+  const handleDeleteFile = (projectId: string, fileId: string) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return {
+          ...p,
+          files: p.files.filter(f => f.id !== fileId)
         };
-        setEditorBlocks([...editorBlocks, newBlock]);
-      } else {
-        setGeneratedImageUrl(imageUrl);
-        setUploadedImageUrl(null);
       }
-    } else {
-      alert("Failed to generate image. Please try again.");
-    }
+      return p;
+    }));
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert("Image should be less than 2MB");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (editorMode === 'blocks') {
-          const newBlock: BlockData = {
-            id: Math.random().toString(36).substr(2, 9),
-            type: 'image',
-            content: reader.result as string,
-          };
-          setEditorBlocks([...editorBlocks, newBlock]);
-        } else {
-          setUploadedImageUrl(reader.result as string);
-          setGeneratedImageUrl(null);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleAIRefine = async () => {
-    if (!newPost || newPost === '<p><br></p>') return;
-    
-    setIsRefining(true);
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = newPost;
-    const plainText = tempDiv.textContent || tempDiv.innerText || "";
-    
-    const refined = await refineBlogPost(plainText);
-    setIsRefining(false);
-    
-    if (refined) {
-      // Process the refined content to handle Hazi Bari specific formatting
-      const lines = refined.split('\n');
-      let htmlFormatted = '';
-      let inList = false;
-      let metaDescription = '';
-
-      lines.forEach(line => {
-        const trimmed = line.trim();
-        
-        // Extract Meta Description
-        if (trimmed.toLowerCase().startsWith('meta description:')) {
-          metaDescription = trimmed.substring(17).trim();
-          return;
-        }
-
-        // Handle Headings
-        if (trimmed.startsWith('## ')) {
-          if (inList) { htmlFormatted += '</ul>'; inList = false; }
-          htmlFormatted += `<h2>${trimmed.substring(3)}</h2>`;
-        } else if (trimmed.startsWith('### ')) {
-          if (inList) { htmlFormatted += '</ul>'; inList = false; }
-          htmlFormatted += `<h3>${trimmed.substring(4)}</h3>`;
-        } 
-        // Handle Bullet Points
-        else if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
-          if (!inList) { htmlFormatted += '<ul class="list-disc ml-6 space-y-1 mb-4">'; inList = true; }
-          htmlFormatted += `<li>${trimmed.substring(2)}</li>`;
-        }
-        // Handle Image Placeholders
-        else if (trimmed.includes('[Insert Image Here:')) {
-          if (inList) { htmlFormatted += '</ul>'; inList = false; }
-          const desc = trimmed.match(/\[Insert Image Here: (.*?)\]/)?.[1] || "Image suggestion";
-          htmlFormatted += `<div class="my-6 p-4 bg-foundation-100 rounded-2xl border-2 border-dashed border-foundation-300 flex flex-col items-center gap-2 text-center">
-            <div class="w-10 h-10 rounded-full bg-foundation-200 flex items-center justify-center text-foundation-500">
-              <i class="lucide-image"></i>
-            </div>
-            <p class="text-[10px] font-bold text-foundation-400 uppercase tracking-widest">AI Image Suggestion</p>
-            <p class="text-xs text-foundation-700 italic font-medium">"${desc}"</p>
-          </div>`;
-        }
-        // Filter out SEO keywords or Meta info from actual post body if present as headers
-        else if (trimmed.toLowerCase().startsWith('keywords:') || trimmed.toLowerCase().startsWith('seo:')) {
-          // Skip these lines in the main post content
-        }
-        // Handle Paragraphs
-        else if (trimmed !== '') {
-          if (inList) { htmlFormatted += '</ul>'; inList = false; }
-          // Handle Bold/Emoji/Link style
-          const processed = trimmed
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>');
-          htmlFormatted += `<p>${processed}</p>`;
-        } else {
-          if (inList) { htmlFormatted += '</ul>'; inList = false; }
-        }
-      });
-
-      if (inList) htmlFormatted += '</ul>';
-
-      // Add meta description as a note at the top if found
-      if (metaDescription) {
-        const metaBlock = `<div class="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl">
-          <p class="text-[9px] font-bold text-indigo-500 uppercase tracking-widest mb-1 flex items-center gap-2">
-            <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span> SEO Meta Description
-          </p>
-          <p class="text-xs text-indigo-900 font-medium">${metaDescription}</p>
-        </div>`;
-        htmlFormatted = metaBlock + htmlFormatted;
-      }
-
-      setNewPost(htmlFormatted);
-      
-      // Feedback to user
-      const n = document.createElement('div');
-      n.innerHTML = '✨ Post Refined & Optimized for SEO!';
-      n.className = 'fixed top-20 right-4 bg-indigo-600 text-white px-6 py-3 rounded-2xl shadow-2xl z-[1000] font-bold text-sm animate-bounce';
-      document.body.appendChild(n);
-      setTimeout(() => n.remove(), 3000);
-    }
-  };
-
-  const filteredPosts = posts.filter(post => 
-    post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    post.authorName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const getPostStyles = (type: Post['type']) => {
-    switch (type) {
-      case 'event': return { 
-        bg: 'bg-blue-50', 
-        border: 'border-blue-200', 
-        tag: 'bg-blue-600', 
-        icon: <Calendar size={14} className="text-blue-600" />,
-        label: 'Event'
-      };
-      case 'project': return { 
-        bg: 'bg-emerald-50', 
-        border: 'border-emerald-200', 
-        tag: 'bg-emerald-600', 
-        icon: <Hammer size={14} className="text-emerald-600" />,
-        label: 'Project'
-      };
-      case 'help': return { 
-        bg: 'bg-rose-50', 
-        border: 'border-rose-200', 
-        tag: 'bg-rose-600', 
-        icon: <LifeBuoy size={14} className="text-rose-600" />,
-        label: 'Help Request'
-      };
-      default: return { 
-        bg: 'bg-foundation-200/50', 
-        border: 'border-foundation-300', 
-        tag: 'bg-foundation-700', 
-        icon: <Megaphone size={14} className="text-foundation-600" />,
-        label: 'Announcement'
-      };
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {(profile?.isApproved || profile?.role === 'admin') ? (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-foundation-300">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex gap-4 items-center">
-              <img src={profile?.photoURL || undefined} alt="" className="w-10 h-10 rounded-full shrink-0" />
-              <div>
-                <h3 className="font-bold text-foundation-900 leading-none">
-                  {editingPostId ? 'Edit Community Post' : 'Create Engagement'}
-                </h3>
-                <p className="text-[10px] text-foundation-400 font-bold uppercase tracking-widest mt-1">
-                  {editingPostId ? 'Modifying existing entry' : 'Hazi Bari Community Board'}
-                </p>
-              </div>
-            </div>
-            <div className="flex bg-foundation-100 p-1 rounded-xl">
-              <button 
-                onClick={() => setEditorMode('blocks')}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${editorMode === 'blocks' ? 'bg-white shadow-sm text-foundation-900' : 'text-foundation-500'}`}
-              >
-                Block Editor
-              </button>
-              <button 
-                onClick={() => setEditorMode('classic')}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${editorMode === 'classic' ? 'bg-white shadow-sm text-foundation-900' : 'text-foundation-500'}`}
-              >
-                Classic
-              </button>
-            </div>
-          </div>
-
-          <div className="rich-text-editor">
-            {editorMode === 'classic' ? (
-              <ReactQuill 
-                theme="snow"
-                value={newPost}
-                onChange={setNewPost}
-                placeholder="What's happening in the family?"
-                modules={{
-                  toolbar: [
-                    ['bold', 'italic'],
-                    [{ 'list': 'bullet' }],
-                    ['clean']
-                  ],
-                }}
-                className="bg-foundation-50 rounded-lg overflow-hidden"
-              />
-            ) : (
-              <BlockEditor blocks={editorBlocks} onChange={setEditorBlocks} />
-            )}
-              
-              <AnimatePresence>
-                {postType === 'project' && (
-                  <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pb-3 border-b border-foundation-200">
-                      <Input 
-                        type="date" 
-                        label="Start Date" 
-                        value={projectData.startDate} 
-                        onChange={(e: any) => setProjectData({...projectData, startDate: e.target.value})} 
-                      />
-                      <Input 
-                        type="date" 
-                        label="End Date" 
-                        value={projectData.endDate} 
-                        onChange={(e: any) => setProjectData({...projectData, endDate: e.target.value})} 
-                      />
-                      <Input 
-                        type="number" 
-                        label="Estimated Budget (BDT)" 
-                        placeholder="e.g. 50000"
-                        value={projectData.budget} 
-                        onChange={(e: any) => setProjectData({...projectData, budget: e.target.value})} 
-                      />
-                      <Input 
-                        label="Short Project Summary" 
-                        placeholder="Goal of the project..."
-                        value={projectData.summary} 
-                        onChange={(e: any) => setProjectData({...projectData, summary: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="mt-3 p-3 bg-foundation-200 rounded-lg space-y-3">
-                      <p className="text-[10px] font-bold text-foundation-700 uppercase tracking-wider">Detailed Budget Breakdown</p>
-                      <div className="flex gap-2">
-                        <input 
-                          placeholder="Item name (e.g. Masonry)"
-                          value={breakdownItem}
-                          onChange={e => setBreakdownItem(e.target.value)}
-                          className="flex-1 p-2 bg-white rounded border border-foundation-300 text-xs focus:ring-1 focus:ring-foundation-500 outline-none"
-                        />
-                        <input 
-                          type="number"
-                          placeholder="Amount"
-                          value={breakdownAmount}
-                          onChange={e => setBreakdownAmount(e.target.value)}
-                          className="w-24 p-2 bg-white rounded border border-foundation-300 text-xs focus:ring-1 focus:ring-foundation-500 outline-none"
-                        />
-                        <button 
-                          onClick={() => {
-                            if (breakdownItem && breakdownAmount) {
-                              setProjectBreakdown([...projectBreakdown, { item: breakdownItem, amount: Number(breakdownAmount) }]);
-                              setBreakdownItem('');
-                              setBreakdownAmount('');
-                            }
-                          }}
-                          className="p-2 bg-foundation-900 text-white rounded hover:bg-foundation-800 transition-colors"
-                        >
-                          <Plus size={14} />
-                        </button>
-                      </div>
-                      {projectBreakdown.length > 0 && (
-                        <div className="space-y-1">
-                          {projectBreakdown.map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-center bg-white/50 p-2 rounded text-[10px]">
-                              <span className="font-medium">{item.item}</span>
-                              <div className="flex items-center gap-3 font-mono">
-                                <span>{item.amount.toLocaleString()} BDT</span>
-                                <button 
-                                  onClick={() => setProjectBreakdown(projectBreakdown.filter((_, i) => i !== idx))}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  <Trash2 size={10} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                          <div className="pt-2 border-t border-foundation-300 flex justify-between font-bold text-foundation-900 text-[10px]">
-                            <span>Calculated Total</span>
-                            <span>{projectBreakdown.reduce((s, i) => s + i.amount, 0).toLocaleString()} BDT</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {recordedAudio && (
-                  <motion.div 
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.8, opacity: 0 }}
-                    className="mt-4 p-4 bg-foundation-200/50 rounded-2xl border border-foundation-300 relative group"
-                  >
-                    <button 
-                      onClick={() => setRecordedAudio(null)}
-                      className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-20"
-                    >
-                      <X size={12} />
-                    </button>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-foundation-900 text-white rounded-full flex items-center justify-center shadow-md">
-                        <Volume2 size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[10px] font-bold text-foundation-600 uppercase tracking-widest mb-1">Recorded Voice Note</p>
-                        <AudioPlayer src={recordedAudio} />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {(generatedImageUrl || uploadedImageUrl) && (
-                  <motion.div 
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.8, opacity: 0 }}
-                    className="mt-4 relative group rounded-2xl overflow-hidden border-2 border-foundation-300 shadow-xl"
-                  >
-                    <img src={(uploadedImageUrl || generatedImageUrl) as string} alt="Post visual" className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-full ${generatedImageUrl ? 'bg-amber-500' : 'bg-indigo-500'} flex items-center justify-center text-white`}>
-                          {generatedImageUrl ? <Sparkles size={16} /> : <Camera size={16} />}
-                        </div>
-                        <p className="text-white text-xs font-bold">{generatedImageUrl ? 'AI Generated Context Visual' : 'Uploaded Image'}</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => { setGeneratedImageUrl(null); setUploadedImageUrl(null); }}
-                      className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-full shadow-lg transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: 'news', label: 'News', icon: <Megaphone size={14} /> },
-                    { id: 'event', label: 'Event', icon: <Calendar size={14} /> },
-                    { id: 'project', label: 'Project', icon: <Hammer size={14} /> },
-                    { id: 'help', label: 'Help', icon: <LifeBuoy size={14} /> },
-                  ].map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => setPostType(item.id as Post['type'])}
-                      className={`
-                        flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all
-                        ${postType === item.id 
-                          ? 'bg-foundation-900 text-white shadow-md' 
-                          : 'bg-foundation-200 text-foundation-600 hover:bg-foundation-300'}
-                      `}
-                    >
-                      {item.icon}
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-2">
-                  <button 
-                    onClick={handleAIRefine}
-                    disabled={isRefining || !newPost || newPost === '<p><br></p>'}
-                    className="group bg-gradient-to-r from-amber-50 to-indigo-50 border border-indigo-100 px-3 py-2 rounded-full text-[10px] font-bold text-indigo-600 hover:border-indigo-300 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm active:scale-95"
-                  >
-                    {isRefining ? <Loader2 size={12} className="animate-spin text-indigo-500" /> : <Sparkles size={12} className="text-amber-500 group-hover:animate-pulse" />}
-                    {isRefining ? 'Refining...' : 'AI Refine'}
-                  </button>
-
-                  <button 
-                    onClick={handleGenerateImage}
-                    disabled={isGeneratingImage || !newPost || newPost === '<p><br></p>'}
-                    className="group bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 px-3 py-2 rounded-full text-[10px] font-bold text-indigo-700 hover:border-indigo-300 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm active:scale-95"
-                  >
-                    {isGeneratingImage ? <Loader2 size={12} className="animate-spin text-indigo-500" /> : <ImageIcon size={12} className="text-indigo-600" />}
-                    {isGeneratingImage ? 'Generating...' : 'AI Image'}
-                  </button>
-
-                  <label className="cursor-pointer group bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 px-3 py-2 rounded-full text-[10px] font-bold text-emerald-700 hover:border-emerald-300 transition-all flex items-center gap-2 shadow-sm active:scale-95">
-                    <Camera size={12} className="text-emerald-600" />
-                    Upload Image
-                    <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
-                  </label>
-
-                  <VoiceRecorder onRecordingComplete={(data) => {
-                    if (editorMode === 'blocks') {
-                      const newBlock: BlockData = {
-                        id: Math.random().toString(36).substr(2, 9),
-                        type: 'audio',
-                        content: data,
-                      };
-                      setEditorBlocks([...editorBlocks, newBlock]);
-                    } else {
-                      setRecordedAudio(data);
-                    }
-                  }} />
-                  {editingPostId && (
-                    <button 
-                      onClick={() => {
-                        setEditingPostId(null);
-                        setNewPost('');
-                        setEditorBlocks([]);
-                        setRecordedAudio(null);
-                        setGeneratedImageUrl(null);
-                        setUploadedImageUrl(null);
-                        setProjectData({ startDate: '', endDate: '', budget: '', summary: '' });
-                        setProjectBreakdown([]);
-                      }}
-                      className="px-4 py-2 text-[10px] font-bold text-foundation-500 uppercase tracking-widest hover:bg-foundation-200 rounded-full transition-all"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  <button 
-                    onClick={handlePost}
-                    disabled={!newPost.trim() && !recordedAudio && !generatedImageUrl && !uploadedImageUrl}
-                    className="bg-foundation-900 text-white px-6 py-2 rounded-full font-bold text-sm hover:focus:bg-foundation-800 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 shadow-lg active:scale-95"
-                  >
-                    {editingPostId ? <Save size={16} /> : <Plus size={16} />}
-                    {editingPostId ? 'Save Changes' : 'Post'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-      ) : (
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-foundation-300 text-center space-y-4">
-          <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-600">
-            <Lock size={32} />
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-xl font-display font-medium text-foundation-900">Post Submission Restricted</h3>
-            <p className="text-foundation-500 text-xs max-w-sm mx-auto">
-              You must be a verified family member to share news or projects. Your account is currently pending approval by the directors.
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-foundation-400" size={18} />
-        <input 
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Search posts by content or author..."
-          className="w-full pl-12 pr-4 py-3 bg-white rounded-xl border border-foundation-300 focus:ring-2 focus:ring-foundation-500 focus:outline-none shadow-sm text-sm"
-        />
-        {searchQuery && (
-          <button 
-            onClick={() => setSearchQuery('')}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-foundation-400 hover:text-foundation-600"
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        {filteredPosts.map(post => (
-          <SocialPost 
-            key={post.id} 
-            post={post} 
-            profile={profile} 
-            isOwner={post.authorId === profile?.uid} 
-            setActiveTab={setActiveTab}
-            setActiveConversationId={setActiveConversationId}
-            onEdit={() => handleEditPost(post)}
-            onDelete={() => handleDeletePost(post.id)}
-            onPreviewMedia={(url, type) => setFullScreenMedia({ url, type })}
-          />
-        ))}
-        {filteredPosts.length === 0 && (
-          <div className="p-12 text-center text-foundation-500 bg-white rounded-xl border border-foundation-300 italic">
-            No posts match your search.
-          </div>
-        )}
-
-        <AnimatePresence>
-          {fullScreenMedia && (
-            <div 
-              className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 md:p-12"
-              onClick={() => setFullScreenMedia(null)}
-            >
-              <motion.button 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="absolute top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all z-10"
-                onClick={() => setFullScreenMedia(null)}
-              >
-                <X size={24} />
-              </motion.button>
-              
-              <motion.div 
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="max-w-7xl max-h-full relative"
-                onClick={e => e.stopPropagation()}
-              >
-                {fullScreenMedia.type === 'image' ? (
-                  <img 
-                    src={fullScreenMedia.url} 
-                    className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl" 
-                    alt="Full screen preview" 
-                  />
-                ) : (
-                  <video 
-                    src={fullScreenMedia.url} 
-                    controls 
-                    autoPlay
-                    className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl"
-                  />
-                )}
-                <div className="mt-6 flex justify-center">
-                  <a 
-                    href={fullScreenMedia.url} 
-                    download 
-                    className="px-8 py-3 bg-white rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-snap-yellow transition-all flex items-center gap-2"
-                  >
-                    <Download size={16} /> Download Original
-                  </a>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-interface SocialPostProps {
-  key?: string | number | null;
-  post: Post;
-  profile: UserProfile | null;
-  isOwner: boolean;
-  setActiveTab: (tab: string) => void;
-  setActiveConversationId: (cid: string) => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onPreviewMedia: (url: string, type: 'image' | 'video') => void;
-}
-
-function AudioPlayer({ src }: { src: string }) {
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
-
-  const toggle = () => {
-    if (playing) {
-      audioRef.current?.pause();
-    } else {
-      audioRef.current?.play();
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const p = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-      setProgress(p);
-    }
-  };
-
-  const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      setDuration(audioRef.current.duration);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3 bg-foundation-100/80 backdrop-blur-sm rounded-2xl px-4 py-2 w-full max-w-[240px] mt-2 border border-foundation-200 shadow-inner">
-      <button 
-        onClick={(e) => { e.stopPropagation(); toggle(); }} 
-        className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-md active:scale-95 ${playing ? 'bg-foundation-900 text-white' : 'bg-white text-foundation-900 border border-foundation-200'}`}
-      >
-        {playing ? <Square size={12} fill="currentColor" /> : <Play size={12} className="ml-0.5" fill="currentColor" />}
-      </button>
-      
-      <div className="flex-1 space-y-1">
-        <div className="flex items-center justify-between text-[8px] font-bold text-foundation-500 uppercase tracking-tighter">
-          <span>{playing ? 'Playing' : 'Voice Note'}</span>
-          <span>{duration ? `${Math.floor(duration)}s` : '...'}</span>
-        </div>
-        <div className="h-1.5 bg-foundation-200 rounded-full overflow-hidden relative">
-          <motion.div 
-            className="absolute top-0 left-0 h-full bg-foundation-600"
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
-          />
-          <div className="absolute inset-0 flex items-center justify-around opacity-20 pointer-events-none">
-            {[...Array(12)].map((_, i) => (
-              <div key={i} className="w-0.5 h-1 bg-foundation-900 rounded-full" />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <audio 
-        ref={audioRef} 
-        src={src} 
-        onEnded={() => { setPlaying(false); setProgress(0); }} 
-        onPause={() => setPlaying(false)}
-        onPlay={() => setPlaying(true)}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        className="hidden" 
-      />
-    </div>
-  );
-}
-
-function VoiceRecorder({ onRecordingComplete }: { onRecordingComplete: (audioData: string) => void }) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
-  const [duration, setDuration] = useState(0);
-  const [wave, setWave] = useState<number[]>([]);
-
-  useEffect(() => {
-    let interval: any;
-    if (isRecording) {
-      interval = setInterval(() => {
-        setDuration(d => d + 1);
-        setWave(prev => [...prev.slice(-15), Math.random() * 20 + 5]);
-      }, 100);
-    } else {
-      setDuration(0);
-      setWave([]);
-    }
-    return () => clearInterval(interval);
-  }, [isRecording]);
-
-  const startRecording = async () => {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const r = new MediaRecorder(s);
-      const chunks: BlobPart[] = [];
-      
-      r.ondataavailable = (e) => chunks.push(e.data);
-      r.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => {
-          const base64data = reader.result as string;
-          onRecordingComplete(base64data);
-        };
-        s.getTracks().forEach(track => track.stop());
-      };
-      
-      r.start();
-      setRecorder(r);
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Error accessing microphone:", err);
-      // alert("Microphone access denied or not supported.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (recorder) {
-      recorder.stop();
-      setIsRecording(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3">
-      <AnimatePresence>
-        {isRecording && (
-          <motion.div 
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
-            className="flex items-center gap-2 bg-red-50 px-3 py-1.5 rounded-full border border-red-100"
-          >
-            <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
-            <span className="text-[10px] font-mono text-red-600 font-bold">
-              {Math.floor(duration / 600)}:{((duration / 10) % 60).toFixed(0).padStart(2, '0')}
-            </span>
-            <div className="flex gap-0.5 items-end h-3">
-              {wave.map((h, i) => (
-                <div key={i} className="w-0.5 bg-red-400 rounded-full" style={{ height: `${h}px` }} />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <button 
-        onClick={isRecording ? stopRecording : startRecording}
-        className={`w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-md active:scale-90 ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-white text-foundation-500 hover:text-foundation-900 border border-foundation-300 hover:border-foundation-900'}`}
-        title={isRecording ? "Stop Recording" : "Record Voice Message"}
-      >
-        {isRecording ? <Square size={16} fill="white" /> : <Mic size={20} />}
-      </button>
-    </div>
-  );
-}
-
-function CommentComponent({ comment, profile, onReply }: { comment: any, profile: UserProfile | null, onReply: (parentId: string, authorName: string) => void }) {
-  return (
-    <div className="flex gap-3 group animate-in fade-in slide-in-from-left-2">
-      <img src={comment.authorPhotoURL || `https://ui-avatars.com/api/?name=${comment.authorName}`} className="w-9 h-9 rounded-full shrink-0 border border-foundation-200 shadow-sm mt-0.5" alt="" />
-      <div className="flex-1 min-w-0">
-        <div className="bg-white border border-foundation-200 rounded-2xl rounded-tl-none p-3 shadow-sm inline-block max-w-full">
-          <div className="flex items-center justify-between gap-6 mb-1">
-            <h5 className="text-[11px] font-extrabold text-foundation-900 underline decoration-foundation-200 underline-offset-2">{comment.authorName}</h5>
-            <span className="text-[9px] text-foundation-400 font-mono whitespace-nowrap">
-              {comment.createdAt?.toDate ? format(comment.createdAt.toDate(), 'h:mm a') : 'Just now'}
-            </span>
-          </div>
-          {comment.audioUrl ? (
-            <AudioPlayer src={comment.audioUrl} />
-          ) : (
-            <p className="text-xs text-foundation-800 leading-relaxed break-words whitespace-pre-wrap">
-              {comment.content}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-4 mt-1.5 ml-2">
-          <button 
-            onClick={() => onReply(comment.id, comment.authorName)}
-            className="text-[10px] font-bold text-foundation-500 hover:text-foundation-900 transition-colors uppercase tracking-widest"
-          >
-            Reply
-          </button>
-          <div className="w-1 h-1 bg-foundation-300 rounded-full" />
-          <span className="text-[10px] text-foundation-400">{comment.audioUrl ? 'Voice Note' : 'Text'}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-function SocialPost({ post, profile, isOwner, setActiveTab, setActiveConversationId, onEdit, onDelete, onPreviewMedia }: SocialPostProps) {
-  const [showComments, setShowComments] = useState(false);
-  const [showContributions, setShowContributions] = useState(false);
-  const [showBudgetBreakdown, setShowBudgetBreakdown] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [comments, setComments] = useState<any[]>([]);
-  const [contributions, setContributions] = useState<Contribution[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [replyTo, setReplyTo] = useState<{ id: string, name: string } | null>(null);
-  const [isLiking, setIsLiking] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'director' || profile?.email === 'mdmonirahamedarfin@gmail.com';
-
-  const hasLiked = profile && post.likes?.includes(profile.uid);
-
-  useEffect(() => {
-    if (showComments) {
-      const q = query(
-        collection(db, 'comments'), 
-        where('postId', '==', post.id), 
-        orderBy('createdAt', 'asc')
-      );
-      const unsubscribe = onSnapshot(q, (snap) => {
-        setComments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      });
-      return () => unsubscribe();
-    }
-  }, [showComments, post.id]);
-
-  useEffect(() => {
-    if (post.type === 'project') {
-      const q = query(
-        collection(db, 'posts', post.id, 'contributions'), 
-        orderBy('createdAt', 'desc')
-      );
-      const unsubscribe = onSnapshot(q, (snap) => {
-        setContributions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contribution)));
-      }, (err) => handleFirestoreError(err, OperationType.GET, `posts/${post.id}/contributions`));
-      return () => unsubscribe();
-    }
-  }, [post.id, post.type]);
-
-  const toggleLike = async () => {
-    if (!profile || isLiking) return;
-    setIsLiking(true);
-    const docRef = doc(db, 'posts', post.id);
-    try {
-      if (hasLiked) {
-        await updateDoc(docRef, { likes: arrayRemove(profile.uid) });
-      } else {
-        await updateDoc(docRef, { likes: arrayUnion(profile.uid) });
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `posts/${post.id}`);
-    } finally {
-      setIsLiking(false);
-    }
-  };
-
-  const handleComment = async (audioData?: string) => {
-    if (!audioData && !newComment.trim()) return;
-    if (!profile) return;
-    
-    try {
-      const commentData: any = {
-        postId: post.id,
-        authorId: profile.uid,
-        authorName: profile.displayName,
-        authorPhotoURL: profile.photoURL || '',
-        content: newComment,
-        createdAt: serverTimestamp(),
-      };
-
-      if (replyTo) {
-        commentData.parentId = replyTo.id;
-        if (!audioData) {
-          commentData.content = `@${replyTo.name} ${newComment}`;
-        }
-      }
-
-      if (audioData) {
-        commentData.audioUrl = audioData;
-        commentData.content = '[ভয়েস রিপ্লাই]';
-      }
-
-      await addDoc(collection(db, 'comments'), commentData);
-      
-      await updateDoc(doc(db, 'posts', post.id), {
-        commentCount: increment(1)
-      });
-      
-      setNewComment('');
-      setReplyTo(null);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'comments');
-    }
-  };
-
-  const parentComments = comments.filter(c => !c.parentId);
-  const getReplies = (parentId: string) => comments.filter(c => c.parentId === parentId);
-
-  const handleShare = () => {
-    if (navigator.share) {
-      const plainText = post.content.replace(/<[^>]*>/g, '');
-      navigator.share({
-        title: 'Hazi Bari Foundation Post',
-        text: plainText,
-        url: window.location.href,
-      });
-    } else {
-      navigator.clipboard.writeText(`${window.location.href} (Post by ${post.authorName})`);
-      alert('Link copied to clipboard!');
-    }
-  };
-
-  const getPostStyles = (type: Post['type']) => {
-    switch (type) {
-      case 'event': return { 
-        bg: 'bg-blue-50', 
-        border: 'border-blue-200', 
-        tag: 'bg-blue-600', 
-        icon: <Calendar size={14} className="text-blue-600" />,
-        label: 'Event'
-      };
-      case 'project': return { 
-        bg: 'bg-emerald-50', 
-        border: 'border-emerald-200', 
-        tag: 'bg-emerald-600', 
-        icon: <Hammer size={14} className="text-emerald-600" />,
-        label: 'Project'
-      };
-      case 'help': return { 
-        bg: 'bg-rose-50', 
-        border: 'border-rose-200', 
-        tag: 'bg-rose-600', 
-        icon: <LifeBuoy size={14} className="text-rose-600" />,
-        label: 'Help Request'
-      };
-      default: return { 
-        bg: 'bg-white', 
-        border: 'border-foundation-300', 
-        tag: 'bg-foundation-700', 
-        icon: <Megaphone size={14} className="text-foundation-600" />,
-        label: 'Announcement'
-      };
-    }
-  };
-
-  const styles = getPostStyles(post.type);
-
-  return (
-    <div className={`rounded-xl shadow-sm border ${styles.border} ${styles.bg} transition-all relative overflow-hidden`}>
-      <div className="absolute -right-6 -bottom-6 opacity-[0.03] rotate-12 pointer-events-none">
-        {React.cloneElement(styles.icon as any, { size: 120 })}
-      </div>
-
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <img src={post.authorPhotoURL || `https://ui-avatars.com/api/?name=${post.authorName}`} className="w-10 h-10 rounded-full border border-foundation-200" alt="" />
-            <div>
-              <h4 className="font-bold text-foundation-900 text-sm">{post.authorName}</h4>
-              <p className="text-[10px] text-foundation-500 uppercase tracking-widest">
-                {post.createdAt?.toDate ? format(post.createdAt.toDate(), 'PPP p') : 'Just now'}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 relative">
-            <div className={`px-3 py-1 rounded-full ${styles.tag} text-white text-[9px] font-bold uppercase tracking-[0.15em]`}>
-              {React.cloneElement(styles.icon as any, { size: 10, className: 'text-white' })}
-              {styles.label}
-            </div>
-            {(isOwner || isAdmin) && (
-              <div className="relative">
-                <button 
-                  onClick={() => setShowMoreMenu(!showMoreMenu)}
-                  className={`p-2 transition-all rounded-full ${showMoreMenu ? 'bg-foundation-900 text-white shadow-lg rotate-90' : 'text-foundation-400 hover:text-foundation-900 hover:bg-foundation-200'}`}
-                >
-                  <MoreVertical size={16} />
-                </button>
-                <AnimatePresence>
-                  {showMoreMenu && (
-                    <>
-                      <div className="fixed inset-0 z-20" onClick={() => setShowMoreMenu(false)} />
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.9, y: -10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                        className="absolute right-0 mt-2 w-48 bg-white/95 backdrop-blur-md border border-foundation-200 rounded-2xl shadow-2xl z-30 py-3 overflow-hidden origin-top-right"
-                      >
-                        <div className="px-4 py-1 mb-2 border-b border-foundation-100 flex items-center justify-between">
-                           <span className="text-[8px] font-black uppercase tracking-[0.2em] text-foundation-400">Post Actions</span>
-                           <div className="w-1 h-1 bg-snap-blue rounded-full animate-pulse" />
-                        </div>
-                        {isOwner && (
-                          <button 
-                            onClick={() => { onEdit(); setShowMoreMenu(false); }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 hover:text-snap-blue transition-all uppercase tracking-widest group"
-                          >
-                            <div className="w-8 h-8 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-snap-blue/10 transition-colors">
-                              <Pencil size={14} />
-                            </div>
-                            <span>Edit Context</span>
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => { 
-                            navigator.clipboard.writeText(window.location.href);
-                            setShowMoreMenu(false);
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 transition-all uppercase tracking-widest group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-foundation-100 transition-colors">
-                             <Copy size={14} />
-                          </div>
-                          <span>Copy Link</span>
-                        </button>
-                        <div className="mx-4 my-2 border-t border-foundation-100" />
-                        <button 
-                          onClick={() => { setShowMoreMenu(false); onDelete(); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black text-red-500 hover:bg-red-50 transition-all uppercase tracking-widest group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition-colors">
-                            <Trash2 size={14} />
-                          </div>
-                          <span>Remove Post</span>
-                        </button>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div 
-          className="text-foundation-800 leading-relaxed relative z-10 text-sm mb-4 rich-text-content"
-          dangerouslySetInnerHTML={{ __html: post.content }}
-        />
-
-            {post.blocks && post.blocks.length > 0 && (
-              <div className="space-y-4 mb-4">
-                {post.blocks.map((block) => (
-                  <div key={block.id} className="relative z-10">
-                    {block.type === 'text' && (
-                      <div className="text-sm text-foundation-800 leading-relaxed" dangerouslySetInnerHTML={{ __html: block.content }} />
-                    )}
-                    {block.type === 'image' && block.content && (
-                      <div 
-                        onClick={() => onPreviewMedia(block.content!, 'image')}
-                        className="rounded-2xl overflow-hidden border border-foundation-200 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
-                      >
-                        <img src={block.content} alt="" className="w-full aspect-video object-cover" />
-                      </div>
-                    )}
-                    {block.type === 'audio' && block.content && (
-                      <div className="p-4 bg-foundation-50 rounded-2xl border border-foundation-200">
-                        <AudioPlayer src={block.content} />
-                      </div>
-                    )}
-                    {block.type === 'video' && block.content && (
-                      <div className="aspect-video rounded-2xl overflow-hidden shadow-sm bg-black relative group">
-                        {block.content.startsWith('data:') ? (
-                          <>
-                            <video src={block.content} className="w-full h-full" />
-                            <button 
-                              onClick={() => onPreviewMedia(block.content!, 'video')}
-                              className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-all"
-                            >
-                               <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white scale-90 group-hover:scale-100 transition-transform">
-                                  <Maximize2 size={24} />
-                               </div>
-                            </button>
-                          </>
-                        ) : (
-                          <iframe 
-                            src={block.content.includes('youtube.com') || block.content.includes('youtu.be') 
-                              ? block.content.replace('watch?v=', 'embed/').split('&')[0] 
-                              : block.content} 
-                            className="w-full h-full border-0" 
-                            allowFullScreen 
-                          />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-        {post.imageUrl && (
-          <div 
-            onClick={() => onPreviewMedia(post.imageUrl!, 'image')}
-            className="mb-4 relative rounded-2xl overflow-hidden border border-foundation-200 shadow-md group cursor-pointer transition-transform hover:scale-[1.01]"
-          >
-            <img 
-              src={post.imageUrl} 
-              alt="Community Visual" 
-              className="w-full aspect-video object-cover" 
-              referrerPolicy="no-referrer" 
-            />
-            <div className="absolute top-2 left-2 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5 border border-white/20">
-              <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
-              AI Context Visual
-            </div>
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-               <Maximize2 size={32} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-          </div>
-        )}
-
-        {post.audioUrl && (
-          <div className="mb-6 bg-white/40 p-4 rounded-3xl border border-foundation-200 backdrop-blur-sm relative z-10 shadow-inner">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-foundation-900 text-white flex items-center justify-center animate-pulse-slow">
-                <Mic size={14} />
-              </div>
-              <div className="flex-1">
-                <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1">Attached Voice Note</p>
-                <AudioPlayer src={post.audioUrl} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {post.type === 'project' && (
-          <div className="mb-4 grid grid-cols-2 gap-4 p-4 rounded-lg bg-emerald-100/50 border border-emerald-200 relative z-10">
-            {post.projectSummary && (
-              <div className="col-span-2">
-                <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Project Summary</p>
-                <p className="text-xs text-emerald-900 italic">"{post.projectSummary}"</p>
-              </div>
-            )}
-            <div>
-              <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Timeline</p>
-              <p className="text-xs text-emerald-900">
-                {post.projectStartDate ? format(new Date(post.projectStartDate), 'MMM d, yyyy') : 'TBD'} — {post.projectEndDate ? format(new Date(post.projectEndDate), 'MMM d, yyyy') : 'TBD'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Estimated Budget</p>
-              <p className="text-xs text-emerald-900 font-bold">{post.projectBudget?.toLocaleString()} BDT</p>
-            </div>
-
-            {post.projectProgress !== undefined && (
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-1">
-                  <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Construction/Work Progress</p>
-                  <p className="text-[10px] font-bold text-emerald-900">{post.projectProgress}%</p>
-                </div>
-                <div className="w-full bg-emerald-200 h-1.5 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-emerald-600 h-full transition-all duration-1000" 
-                    style={{ width: `${post.projectProgress}%` }}
-                  />
-                </div>
-                {post.projectStatusUpdate && (
-                  <p className="text-[9px] text-emerald-800 mt-2 italic bg-white/50 p-2 rounded border border-emerald-100">
-                    <span className="font-bold uppercase tracking-tighter mr-1 text-[8px]">Status:</span> {post.projectStatusUpdate}
-                  </p>
-                )}
-              </div>
-            )}
-            
-            <div className="col-span-2 pt-2 border-t border-emerald-200 space-y-3">
-              {(isOwner || isAdmin) && <ProjectProgressUpdater post={post} />}
-              
-              <button 
-                onClick={() => setShowCheckout(true)}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-200 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 group"
-              >
-                <div className="bg-white/20 p-1.5 rounded-lg group-hover:rotate-12 transition-transform">
-                  <DollarSign size={18} />
-                </div>
-                Contribute Now for this Project
-              </button>
-              
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setShowContributions(!showContributions)}
-                  className="flex-1 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-all flex items-center justify-center gap-2 border border-emerald-100"
-                >
-                  <Users size={12} />
-                  {showContributions ? 'Hide History' : 'Donors List'}
-                </button>
-                {post.projectBudgetBreakdown && post.projectBudgetBreakdown.length > 0 && (
-                  <button 
-                    onClick={() => setShowBudgetBreakdown(!showBudgetBreakdown)}
-                    className="flex-1 py-2 bg-white border border-emerald-100 text-emerald-600 rounded-lg text-[10px] font-bold hover:bg-emerald-50 transition-all flex items-center justify-center gap-2"
-                  >
-                    <PieChart size={12} />
-                    {showBudgetBreakdown ? 'Hide Budget' : 'View Budget'}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {showCheckout && (
-                <CheckoutGateway 
-                  post={post} 
-                  profile={profile} 
-                  onClose={() => setShowCheckout(false)} 
-                />
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {showBudgetBreakdown && post.projectBudgetBreakdown && (
-                <motion.div 
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="col-span-2 overflow-hidden bg-white/60 rounded-lg p-3 border border-emerald-100"
-                >
-                  <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest mb-2">Detailed Budget Items</p>
-                  <div className="space-y-1">
-                    {post.projectBudgetBreakdown.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-[11px] py-1 border-b border-emerald-50 last:border-0">
-                        <span className="text-emerald-700">{item.item}</span>
-                        <span className="font-mono font-bold text-emerald-900">{item.amount.toLocaleString()} BDT</span>
-                      </div>
-                    ))}
-                    <div className="pt-2 mt-2 border-t border-emerald-300 flex justify-between font-bold text-emerald-900 text-xs">
-                      <span>Total Budget</span>
-                      <span>{post.projectBudgetBreakdown.reduce((s, i) => s + i.amount, 0).toLocaleString()} BDT</span>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        <AnimatePresence>
-          {showContributions && post.type === 'project' && (
-            <ProjectContributionPanel 
-              post={post} 
-              profile={profile} 
-              contributions={contributions}
-              isAdmin={isAdmin}
-            />
-          )}
-        </AnimatePresence>
-
-        <div className="flex items-center justify-between border-t border-foundation-200 mt-4 pt-4 relative z-10">
-          <div className="flex items-center gap-6">
-            <button 
-              onClick={toggleLike}
-              className={`flex items-center gap-2 text-xs font-bold transition-all ${hasLiked ? 'text-blue-600 scale-110' : 'text-foundation-500 hover:text-foundation-900'}`}
-            >
-              <ThumbsUp size={16} fill={hasLiked ? 'currentColor' : 'none'} />
-              {post.likes?.length || 0}
-            </button>
-            <button 
-              onClick={() => setShowComments(!showComments)}
-              className="flex items-center gap-2 text-xs font-bold text-foundation-500 hover:text-foundation-900"
-            >
-              <MessageCircle size={16} />
-              {post.commentCount || 0}
-            </button>
-            {!isOwner && profile && (
-              <DirectMessageButton 
-                currentUser={profile} 
-                targetUser={{ 
-                  uid: post.authorId, 
-                  displayName: post.authorName, 
-                  photoURL: post.authorPhotoURL || '' 
-                }} 
-                onStartChat={(cid) => {
-                  setActiveConversationId(cid);
-                  setActiveTab('messages');
-                }}
-              />
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={handleShare}
-              className="flex items-center gap-2 text-xs font-bold text-foundation-500 hover:text-foundation-900 transition-colors"
-            >
-              <Share2 size={16} />
-              Share
-            </button>
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {showComments && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="mt-6 border-t border-foundation-200 pt-6 space-y-6"
-            >
-              <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar pb-4">
-                {parentComments.length === 0 ? (
-                  <div className="text-center py-6 text-foundation-400 italic text-xs">
-                    Be the first to share your thoughts...
-                  </div>
-                ) : (
-                  parentComments.map(comment => (
-                    <div key={comment.id} className="space-y-4">
-                      <CommentComponent 
-                        comment={comment} 
-                        profile={profile} 
-                        onReply={(id, name) => {
-                          setReplyTo({ id, name });
-                          // Focus the input if possible or just show the indicator
-                        }} 
-                      />
-                      
-                      {/* Replies */}
-                      <div className="ml-10 space-y-4 border-l-2 border-foundation-200 pl-4">
-                        {getReplies(comment.id).map(reply => (
-                          <div key={reply.id}>
-                            <CommentComponent 
-                              comment={reply} 
-                              profile={profile} 
-                              onReply={(id, name) => {
-                                setReplyTo({ id: comment.id, name }); 
-                              }} 
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <AnimatePresence>
-                  {replyTo && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="flex items-center justify-between bg-foundation-200 px-4 py-1.5 rounded-t-lg text-[10px] font-bold text-foundation-600 border-b border-foundation-300"
-                    >
-                      <span>Replying to <span className="text-foundation-900">@{replyTo.name}</span></span>
-                      <button onClick={() => setReplyTo(null)} className="text-foundation-400 hover:text-red-500">
-                        <X size={12} />
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                
-                <div className={`flex gap-2 items-center bg-foundation-200 rounded-full pl-4 pr-1 py-1 transition-all border-2 ${replyTo ? 'rounded-tl-none border-foundation-300' : 'border-transparent'}`}>
-                  <input 
-                    value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleComment()}
-                    placeholder={replyTo ? `Reply to ${replyTo.name}...` : "Write a comment..."}
-                    className="flex-1 bg-transparent border-none outline-none text-xs text-foundation-900 py-2"
-                  />
-                  
-                  <div className="flex items-center gap-1">
-                    <VoiceRecorder onRecordingComplete={(data) => handleComment(data)} />
-                    
-                    <button 
-                      onClick={() => handleComment()}
-                      disabled={!newComment.trim()}
-                      className="bg-foundation-900 text-white p-2 rounded-full disabled:opacity-50 transition-all active:scale-95 shadow-md hover:bg-black"
-                    >
-                      <Send size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-
-function AISearchInterface({ members, isAdmin }: { members: UserProfile[], isAdmin: boolean }) {
-  const [queryText, setQueryText] = useState('');
-  const [history, setHistory] = useState<{ role: 'user' | 'model', content: string }[]>([]);
-  const [isThinking, setIsThinking] = useState(false);
-  const [currentTarget, setCurrentTarget] = useState<UserProfile | null>(null);
-  const [pendingRecord, setPendingRecord] = useState<Partial<UserProfile> | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-
-  const handleCreateProfile = async () => {
-    if (!pendingRecord || !isAdmin) return;
-    setIsCreating(true);
-    try {
-      const newMemberId = pendingRecord.memberId || `M${Date.now().toString().slice(-6)}`;
-      const docRef = doc(db, 'users', newMemberId);
-      
-      const fullRecord: UserProfile = {
-        uid: newMemberId,
-        memberId: newMemberId,
-        displayName: pendingRecord.displayName || 'Unnamed Member',
-        email: '',
-        photoURL: '',
-        isApproved: true,
-        role: 'member',
-        isIdScanned: false,
-        isManuallyCreated: true, // I should check if this exists in type, it might not.
-        createdAt: serverTimestamp() as any,
-        fatherName: pendingRecord.fatherName || '',
-        motherName: pendingRecord.motherName || '',
-        village: pendingRecord.village || '',
-        houseName: pendingRecord.houseName || '',
-        nidNumber: pendingRecord.nidNumber || '',
-        mobile: pendingRecord.mobile || '',
-        bio: `Profile created by AI Intelligence on ${new Date().toLocaleDateString()}`,
-        fatherId: pendingRecord.fatherId || '',
-        motherId: '',
-        lastModified: serverTimestamp() as any // Check if this exists
-      };
-
-      await setDoc(docRef, fullRecord);
-      setHistory(prev => [...prev, { role: 'model', content: `সফলভাবে ${fullRecord.displayName} এর প্রোফাইল ডাটাবেজে যুক্ত করা হয়েছে! মেম্বার আইডি: ${fullRecord.memberId}` }]);
-      setPendingRecord(null);
-    } catch (err) {
-      console.error(err);
-      setHistory(prev => [...prev, { role: 'model', content: "দুঃখিত, প্রোফাইল তৈরিতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।" }]);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const handleAISearch = async (e: React.FormEvent) => {
+  // Action: Add Milestone
+  const handleCreateMilestone = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!queryText.trim()) return;
-    
-    const userMessage = queryText.trim();
-    setIsThinking(true);
-    setQueryText('');
-    
-    // Append user message to history
-    const newHistory = [...history, { role: 'user' as const, content: userMessage }];
-    setHistory(newHistory);
-    
+    if (!newMilestoneTitle.trim() || !newMilestoneDate.trim()) return;
+
+    // Make date more readable if user inputted YYYY-MM-DD
+    let formattedDate = newMilestoneDate;
     try {
-      const searchTerm = userMessage.toLowerCase();
-      // Try to find the member if not already set or if a new name is mentioned
-      let target = currentTarget;
-      
-      const potentialNewTarget = members.find(m => 
-        searchTerm.includes(m.displayName.toLowerCase()) || 
-        m.displayName.toLowerCase().split(' ').some(part => part.length > 2 && searchTerm.includes(part))
-      );
-
-      if (potentialNewTarget) {
-        target = potentialNewTarget;
-        setCurrentTarget(target);
+      const parsedDate = new Date(newMilestoneDate);
+      if (!isNaN(parsedDate.getTime())) {
+        formattedDate = parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       }
+    } catch (e) {
+      // Keep as-is
+    }
 
-      if (target) {
-        // Build ancestry context
-        const lineage: any[] = [];
+    const addedItem: ProjectMilestone = {
+      id: 'milestone-' + Date.now(),
+      title: newMilestoneTitle,
+      plannedDate: formattedDate,
+      status: newMilestoneStatus
+    };
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === selectedProjectId) {
+        const autoLog: ProjectLog = {
+          id: 'log-sys-milestone-' + Date.now(),
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          title: `Milestone Added: ${newMilestoneTitle}`,
+          description: `Planned for ${formattedDate} (${newMilestoneStatus} status).`,
+          status: 'success'
+        };
+        return {
+          ...p,
+          milestones: [...(p.milestones || []), addedItem],
+          logs: [autoLog, ...p.logs]
+        };
+      }
+      return p;
+    }));
+
+    setNewMilestoneTitle('');
+    setNewMilestoneDate('');
+    setNewMilestoneStatus('Pending');
+
+    confetti({
+      particleCount: 60,
+      spread: 40,
+      colors: ['#10b981', '#34d399', '#6ee7b7']
+    });
+  };
+
+  // Action: Delete Milestone
+  const handleDeleteMilestone = (projectId: string, milestoneId: string) => {
+    const targetProj = projects.find(p => p.id === projectId);
+    const targetMilestone = targetProj?.milestones?.find(m => m.id === milestoneId);
+    
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const autoLog: ProjectLog = {
+          id: 'log-sys-milestone-del-' + Date.now(),
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          title: `Milestone Removed: ${targetMilestone ? targetMilestone.title : 'Charter Goal'}`,
+          description: `Deleted structural milestone from project goals database.`,
+          status: 'alert'
+        };
+        return {
+          ...p,
+          milestones: (p.milestones || []).filter(m => m.id !== milestoneId),
+          logs: [autoLog, ...p.logs]
+        };
+      }
+      return p;
+    }));
+  };
+
+  // Action: Update Milestone Status
+  const handleUpdateMilestoneStatus = (projectId: string, milestoneId: string, status: 'Pending' | 'In Progress' | 'Completed') => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const targetMilestone = (p.milestones || []).find(m => m.id === milestoneId);
+        const oldStatus = targetMilestone?.status || 'Pending';
         
-        // 1. Subject
-        lineage.push({ 
-          type: 'Subject',
-          name: target.displayName,
-          father: target.fatherName,
-          mother: target.motherName,
-          village: target.village,
-          house: target.houseName,
-          nid: target.nidNumber,
-          mobile: target.mobile,
-          bio: target.bio
+        const updatedMilestones = (p.milestones || []).map(m => {
+          if (m.id === milestoneId) {
+            return { ...m, status };
+          }
+          return m;
         });
 
-        // 2. Father
-        let father = members.find(m => m.uid === target.fatherId || (target.fatherId && m.memberId === target.fatherId));
-        if (father) {
-          lineage.push({
-            type: 'Father',
-            name: father.displayName,
-            father: father.fatherName,
-            mother: father.motherName,
-            house: father.houseName
+        const autoLog: ProjectLog = {
+          id: 'log-sys-milestone-upd-' + Date.now(),
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          title: `Goal Status Shifted: ${targetMilestone ? targetMilestone.title : 'Scope Point'}`,
+          description: `Milestone status changed from "${oldStatus}" to "${status}".`,
+          status: status === 'Completed' ? 'success' : 'info'
+        };
+
+        if (status === 'Completed') {
+          confetti({
+            particleCount: 50,
+            spread: 30,
+            colors: ['#10b981', '#059669']
           });
-          
-          // 3. Grandfather
-          let grandfather = members.find(m => m.uid === father.fatherId || (father.fatherId && m.memberId === father.fatherId));
-          if (grandfather) {
-            lineage.push({
-              type: 'Grandfather',
-              name: grandfather.displayName,
-              father: grandfather.fatherName
-            });
-          }
         }
 
-        const result = await explainFamilyTree(lineage, target?.displayName || 'সদস্য', newHistory, isAdmin);
+        return {
+          ...p,
+          milestones: updatedMilestones,
+          logs: [autoLog, ...p.logs]
+        };
+      }
+      return p;
+    }));
+  };
+
+  // Action: Update Progress Stats
+  const handleUpdateProgressConfig = () => {
+    if (!selectedProject) return;
+    
+    setProjects(prev => prev.map(p => {
+      if (p.id === selectedProjectId) {
+        const isComplete = editingStatusValue === 'Completed' ? 100 : editingProgressValue;
         
-        // Detect if AI has prepared a record
-        if (result.includes('---RECORD_READY---')) {
-           const parts = result.split('---RECORD_READY---');
-           const message = parts[0].trim();
-           let jsonStr = parts[1].trim();
-           
-           // Robustly extract JSON block
-           const startIdx = jsonStr.indexOf('{');
-           const endIdx = jsonStr.lastIndexOf('}');
-           
-           if (startIdx !== -1 && endIdx !== -1) {
-             jsonStr = jsonStr.substring(startIdx, endIdx + 1);
-           }
-           
-           try {
-             const userData = JSON.parse(jsonStr);
-             setHistory(prev => [...prev, { role: 'model', content: message }]);
-             setPendingRecord(userData);
-           } catch (e) {
-             console.error("Failed to parse AI generated record:", e);
-             // If parsing fails, just show the message normally
-             setHistory(prev => [...prev, { role: 'model', content: result }]);
-           }
-        } else {
-           setHistory(prev => [...prev, { role: 'model', content: result }]);
+        // Log auto system alert
+        const progressChangedText = `Project status modified to ${editingStatusValue} (${isComplete}% complete).`;
+        const autoLog: ProjectLog = {
+          id: 'log-sys-' + Date.now(),
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          title: 'Status Assessment Metric Updated',
+          description: progressChangedText,
+          status: 'info'
+        };
+
+        if (isComplete === 100) {
+          confetti({
+            particleCount: 150,
+            spread: 90,
+            origin: { y: 0.5 }
+          });
         }
-      } else {
-        // Fallback for general questions or if no member found
-        const fallbackResult = "আপনার জিজ্ঞাসিত সদস্যের তথ্য আমাদের ডেটাবেজে খুঁজে পাওয়া যাচ্ছে না। অনুগ্রহ করে সঠিক নাম ব্যবহার করে আবার চেষ্টা করুন বা বিস্তারিত তথ্য দিলে আমি আপনাকে সাহায্য করতে পারি।";
-        setHistory(prev => [...prev, { role: 'model', content: fallbackResult }]);
+
+        return {
+          ...p,
+          progress: isComplete,
+          status: editingStatusValue,
+          logs: [autoLog, ...p.logs]
+        };
       }
-    } catch (err) {
-      console.error(err);
-      setHistory(prev => [...prev, { role: 'model', content: "দুঃখিত, তথ্য অনুসন্ধানে এআই ইঞ্জিনে সমস্যা হয়েছে।" }]);
-    } finally {
-      setIsThinking(false);
-    }
+      return p;
+    }));
   };
 
-  return (
-    <div className="mb-10 relative">
-      <div className="bg-white rounded-3xl border-2 border-indigo-100 shadow-xl overflow-hidden">
-        <div className="h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500" />
-        <div className="p-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
-                 <Bot size={28} className="text-white" />
-              </div>
-              <div>
-                <h3 className="text-xl font-display font-black text-foundation-900 uppercase tracking-tight">AI Identification Search</h3>
-                <p className="text-xs text-foundation-400 font-bold uppercase tracking-widest">Powered by HaziBari AI • Ancestry Intelligence</p>
-              </div>
-            </div>
-            {history.length > 0 && (
-              <button 
-                onClick={() => { setHistory([]); setCurrentTarget(null); }}
-                className="text-[10px] font-black uppercase tracking-widest text-foundation-400 hover:text-red-500 transition-colors bg-foundation-100 px-3 py-1 rounded-full"
-              >
-                Clear Context
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-4 mb-6 max-h-[400px] overflow-y-auto custom-scrollbar px-1">
-            {history.length === 0 && (
-              <div className="text-center py-12 text-foundation-300">
-                <Sparkles size={32} className="mx-auto mb-3 opacity-20" />
-                <p className="text-sm font-medium">Ask about someone's lineage or identity.<br/>Tell me if I make a mistake, I'll learn!</p>
-              </div>
-            )}
-            {history.map((msg, idx) => (
-              <motion.div 
-                key={idx}
-                initial={{ opacity: 0, x: msg.role === 'user' ? 10 : -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-[85%] rounded-2xl p-4 text-sm font-medium leading-relaxed ${
-                  msg.role === 'user' 
-                  ? 'bg-indigo-600 text-white rounded-tr-none' 
-                  : 'bg-foundation-50 text-foundation-700 border border-foundation-200 rounded-tl-none'
-                }`}>
-                  {msg.content}
-                </div>
-              </motion.div>
-            ))}
-            {isThinking && (
-              <div className="flex justify-start">
-                <div className="bg-foundation-50 rounded-2xl p-4 text-foundation-400 rounded-tl-none border border-foundation-100 flex items-center gap-2">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span className="text-xs font-black uppercase tracking-widest italic">HaziBari AI Thinking...</span>
-                </div>
-              </div>
-            )}
-            
-            {pendingRecord && isAdmin && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-snap-yellow/10 border-2 border-snap-yellow rounded-2xl p-6 space-y-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-snap-yellow rounded-xl flex items-center justify-center">
-                    <UserPlus size={20} className="text-foundation-900" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-foundation-400">AI Proposed Registration</p>
-                    <h4 className="text-sm font-black text-foundation-900">{pendingRecord.displayName}</h4>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3 text-[10px] font-bold text-foundation-600">
-                  <div className="bg-white p-2 rounded-lg border border-foundation-200">
-                    <span className="text-foundation-400 block uppercase">Father</span>
-                    {pendingRecord.fatherName || 'N/A'}
-                  </div>
-                  <div className="bg-white p-2 rounded-lg border border-foundation-200">
-                    <span className="text-foundation-400 block uppercase">Village</span>
-                    {pendingRecord.village || 'N/A'}
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button 
-                    onClick={handleCreateProfile}
-                    disabled={isCreating}
-                    className="flex-1 bg-foundation-900 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl hover:bg-black transition-all flex items-center justify-center gap-2"
-                  >
-                    {isCreating ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                    Create Official Profile
-                  </button>
-                  <button 
-                    onClick={() => setPendingRecord(null)}
-                    className="px-4 border-2 border-foundation-200 text-foundation-400 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl hover:bg-foundation-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </div>
-
-          <form onSubmit={handleAISearch} className="relative group">
-            <input 
-              type="text" 
-              value={queryText}
-              onChange={(e) => setQueryText(e.target.value)}
-              placeholder={history.length > 0 ? "পরবর্তী কিছু বলুন বা সংশোধন করে দিন..." : "কারো নাম লিখুন (যেমন: আরফিন এর পরিচয় বল...)"}
-              className="w-full bg-foundation-50 border-2 border-foundation-200 rounded-2xl py-5 pl-7 pr-40 text-lg font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all placeholder:text-foundation-300"
-            />
-            <button 
-              type="submit"
-              disabled={isThinking || !queryText.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2 shadow-lg shadow-indigo-200 disabled:opacity-50"
-            >
-              {isThinking ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={16} />
-                  Send
-                </>
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MembersList({ isAdmin, profile, setActiveTab, setActiveConversationId }: { isAdmin: boolean, profile: UserProfile | null, setActiveTab: (tab: string) => void, setActiveConversationId: (cid: string) => void }) {
-  const isApprovedMember = profile?.isApproved === true;
-  const canApprove = isAdmin || isApprovedMember;
-  const [members, setMembers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedMember, setSelectedMember] = useState<UserProfile | null>(null);
-  const [editingMember, setEditingMember] = useState<UserProfile | null>(null);
-  const [showSmartJoin, setShowSmartJoin] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [registrationMode, setRegistrationMode] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [isAISearching, setIsAISearching] = useState(false);
-  const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
-
-  const handleSmartSearch = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!searchQuery.trim() || isAISearching) {
-        setAiFilteredIds(null);
-        return;
-    }
-    setIsAISearching(true);
-    try {
-      // We pass the approved members primarily, but let's pass all as AI might find pending ones too
-      const ids = await searchMembersAI(searchQuery, members);
-      setAiFilteredIds(ids);
-    } catch (err) {
-      console.error("Smart Search Error:", err);
-      setAiFilteredIds(null);
-    } finally {
-      setIsAISearching(false);
-    }
-  };
-  const [formData, setFormData] = useState({
-    displayName: '',
-    fatherName: '',
-    motherName: '',
-    houseName: '',
-    village: '',
-    district: '',
-    nidNumber: '',
-    familyHead: '',
-    mobile: '',
-    photoURL: ''
-  });
-
-  useEffect(() => {
-    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setMembers(snap.docs.map(d => d.data() as UserProfile));
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'users'));
-    return () => unsubscribe();
-  }, []);
-
-  const handleRegistrationSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setRegistrationStatus('idle');
-    try {
-      const slug = formData.displayName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+  // Action: Google Auth & Discussions Operators (নতুন ইউজার এ্যাপ গুগল সাইন আপ)
+  const handleGoogleSignInSimulated = (account: { name: string; email: string; avatar: string }) => {
+    setIsSigningIn(true);
+    
+    // Smooth Google OAuth loader simulator
+    setTimeout(() => {
+      const newUser: PortalUser = {
+        name: account.name,
+        email: account.email,
+        avatar: account.avatar,
+        uid: 'google-usr-' + Math.random().toString(36).substring(2, 9),
+        joinedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      };
       
-      // Auto-linking logic
-      let autoFatherId = undefined;
-      const q = query(collection(db, 'users'), where('displayName', '==', formData.fatherName), limit(1));
-      const fatherSnap = await getDocs(q);
-      if (!fatherSnap.empty) {
-        autoFatherId = fatherSnap.docs[0].id;
-      }
+      setCurrentUser(newUser);
+      setIsSigningIn(false);
+      setShowAuthModal(false);
+      setShowOneTap(false);
 
-      const newMemberData = {
-        ...formData,
-        uid: slug,
-        memberSlug: slug,
-        memberId: `HB-${formData.displayName.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        fatherId: autoFatherId || '',
-        isApproved: false,
-        role: 'member' as const,
-        photoURL: formData.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.displayName)}&background=random&color=fff`,
-        bio: '',
-        tags: [],
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        registeredBy: profile?.uid || 'system'
+      // Save Google Sign Up success log inside project development dashboard
+      const signupLog: ProjectLog = {
+        id: 'log-sys-signup-' + Date.now(),
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        title: `Google Sign-Up: ${account.name}`,
+        description: `Successfully authenticated through secure Google One Tap Node (${account.email}).`,
+        status: 'success'
       };
 
-      // USE SLUG AS DOCUMENT ID
-      await setDoc(doc(db, 'users', slug), newMemberData);
-
-      await addDoc(collection(db, 'notifications'), {
-        type: 'registration',
-        userId: slug,
-        userName: formData.displayName,
-        userPhotoURL: '',
-        message: `${formData.displayName} has been registered.${autoFatherId ? ' System auto-linked their lineage.' : ''}`,
-        read: false,
-        createdAt: serverTimestamp()
-      });
-
-      setRegistrationStatus('success');
-      setFormData({
-        displayName: '',
-        fatherName: '',
-        motherName: '',
-        houseName: '',
-        village: '',
-        district: '',
-        nidNumber: '',
-        familyHead: '',
-        mobile: '',
-        photoURL: ''
-      });
-    } catch (err) {
-      console.error(err);
-      setRegistrationStatus('error');
-      setErrorMessage(err instanceof Error ? err.message : "নিবন্ধকরণ ব্যর্থ হয়েছে। আবার চেষ্টা করুন।");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const [editFormData, setEditFormData] = useState<any>(null);
-
-  useEffect(() => {
-    if (editingMember) {
-      setEditFormData({
-        displayName: editingMember.displayName || '',
-        fatherName: editingMember.fatherName || '',
-        motherName: editingMember.motherName || '',
-        houseName: editingMember.houseName || '',
-        village: editingMember.village || '',
-        district: editingMember.district || '',
-        nidNumber: editingMember.nidNumber || '',
-        mobile: editingMember.mobile || '',
-        familyHead: editingMember.familyHead || '',
-        bio: editingMember.bio || '',
-        photoURL: editingMember.photoURL || '',
-      });
-    }
-  }, [editingMember]);
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingMember || !editFormData) return;
-    setIsSubmitting(true);
-    try {
-      const docRef = doc(db, 'users', editingMember.uid);
-      await updateDoc(docRef, {
-        ...editFormData,
-        updatedAt: serverTimestamp()
-      });
-      
-      // Update local members state immediately for better UX
-      setMembers(prev => prev.map(m => m.uid === editingMember.uid ? { ...m, ...editFormData } : m));
-      
-      // Refresh selected member if it's the one being edited
-      if (selectedMember?.uid === editingMember.uid) {
-        setSelectedMember({ ...selectedMember, ...editFormData });
-      }
-      
-      setEditingMember(null);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${editingMember.uid}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAIResult = (child: string, father: string, fullSuggestion?: any) => {
-    setShowSmartJoin(false);
-    setRegistrationMode(true);
-    setRegistrationStatus('idle');
-    setErrorMessage('');
-    
-    // Function to handle missing data
-    const getValue = (val: any) => (val && val !== 'null' && val !== 'NULL' ? val : 'তথ্য পাওয়া যায়নি');
-
-    setFormData({
-      displayName: getValue(fullSuggestion?.subject?.name || child),
-      fatherName: getValue(fullSuggestion?.father?.name || father),
-      motherName: getValue(fullSuggestion?.mother?.name),
-      village: getValue(fullSuggestion?.village),
-      district: getValue(fullSuggestion?.district),
-      nidNumber: getValue(fullSuggestion?.nidNumber),
-      houseName: getValue(fullSuggestion?.house),
-      familyHead: getValue(fullSuggestion?.father?.name),
-      mobile: ''
-    });
-  };
-
-  const handleRoleChange = async (uid: string, newRole: 'member' | 'admin' | 'collector' | 'director') => {
-    if (!isAdmin) return;
-    try {
-      await updateDoc(doc(db, 'users', uid), { 
-        role: newRole,
-        updatedAt: serverTimestamp() 
-      });
-      // Local state will be updated via onSnapshot
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
-    }
-  };
-
-  const filteredMembers = members.filter(m => {
-    if (aiFilteredIds) return aiFilteredIds.includes(m.uid);
-    const query = searchQuery.toLowerCase();
-    return (
-      m.displayName?.toLowerCase().includes(query) ||
-      m.fatherName?.toLowerCase().includes(query) ||
-      m.motherName?.toLowerCase().includes(query) ||
-      m.houseName?.toLowerCase().includes(query) ||
-      m.village?.toLowerCase().includes(query) ||
-      m.district?.toLowerCase().includes(query) ||
-      m.nidNumber?.toLowerCase().includes(query) ||
-      m.memberId?.toLowerCase().includes(query) ||
-      m.memberSlug?.toLowerCase().includes(query)
-    );
-  });
-
-  const toggleApproval = async (uid: string, currentStatus: boolean) => {
-    if (!canApprove) return;
-    try {
-      await setDoc(doc(db, 'users', uid), { 
-        isApproved: !currentStatus,
-        updatedAt: serverTimestamp() 
-      }, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
-    }
-  };
-
-  if (loading) return <div className="p-12 text-center text-foundation-400">Scanning member database...</div>;
-
-  return (
-    <div className="space-y-6">
-      {/* Smart Join CTA */}
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-foundation-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl group"
-      >
-        <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl group-hover:scale-110 transition-transform duration-700" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-4">
-             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full border border-white/20">
-                <Sparkles size={12} className="text-amber-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest">AI Assisted Registration</span>
-             </div>
-             <h3 className="text-3xl font-display">Become a Member</h3>
-             <p className="text-foundation-300 text-sm max-w-md leading-relaxed">
-               Verify your position in the lineage using AI. Our scanner identifies your root from official documents instantly.
-             </p>
-          </div>
-          <button 
-            onClick={() => setShowSmartJoin(true)}
-            className="px-10 py-5 bg-white text-foundation-900 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-indigo-50 transition-all shadow-2xl active:scale-95 group/btn"
-          >
-            Register as a Family Member
-          </button>
-        </div>
-      </motion.div>
-
-      <AnimatePresence>
-        {registrationMode && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] grid place-items-center p-4 bg-foundation-900/95 backdrop-blur-2xl"
-          >
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-[3rem] w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
-            >
-              <div className="p-8 border-b border-foundation-100 flex items-center justify-between bg-indigo-900 text-white">
-                <div>
-                  <h3 className="text-xl font-display font-bold">Complete Registration</h3>
-                  <p className="text-[10px] text-indigo-300 uppercase font-black">Step 2: Profile Review</p>
-                </div>
-                <button 
-                  onClick={() => setRegistrationMode(false)}
-                  className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                {registrationStatus === 'idle' ? (
-                  <form onSubmit={handleRegistrationSubmit} className="space-y-6">
-                    <div className="grid grid-cols-1 gap-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <Input 
-                          label="Full Name (English)" 
-                          required 
-                          value={formData.displayName} 
-                          onChange={(e: any) => setFormData({...formData, displayName: e.target.value})}
-                        />
-                        <div className="flex flex-col">
-                          <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Profile Photo</label>
-                          <div className="flex items-center gap-3 bg-foundation-50 p-2 rounded-xl border border-foundation-200">
-                            <img 
-                              src={formData.photoURL || `https://ui-avatars.com/api/?name=${formData.displayName}`} 
-                              className="w-10 h-10 rounded-lg object-cover bg-white" 
-                              alt="" 
-                            />
-                            <label className="flex-1 bg-white border border-foundation-300 rounded-lg py-2 text-[10px] text-center font-bold uppercase tracking-widest cursor-pointer hover:bg-foundation-50 transition-colors">
-                              <Camera size={12} className="inline mr-2" /> Upload
-                              <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  try {
-                                    const base64 = await handleImageUpload(file);
-                                    setFormData({...formData, photoURL: base64});
-                                  } catch (err) {
-                                    console.error(err);
-                                  }
-                                }
-                              }} />
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <Input 
-                          label="Father's Name" 
-                          required 
-                          value={formData.fatherName} 
-                          onChange={(e: any) => setFormData({...formData, fatherName: e.target.value})} 
-                        />
-                        <Input 
-                          label="Mother's Name" 
-                          value={formData.motherName} 
-                          onChange={(e: any) => setFormData({...formData, motherName: e.target.value})} 
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <Input 
-                          label="Village (গ্রাম)" 
-                          required 
-                          value={formData.village} 
-                          onChange={(e: any) => setFormData({...formData, village: e.target.value})} 
-                        />
-                        <Input 
-                          label="District (জেলা)" 
-                          required 
-                          value={formData.district} 
-                          onChange={(e: any) => setFormData({...formData, district: e.target.value})} 
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <Input 
-                          label="House Name (বাড়ির নাম)" 
-                          required 
-                          value={formData.houseName} 
-                          onChange={(e: any) => setFormData({...formData, houseName: e.target.value})} 
-                        />
-                        <Input 
-                          label="Document Number (NID/Birth)" 
-                          value={formData.nidNumber} 
-                          onChange={(e: any) => setFormData({...formData, nidNumber: e.target.value})} 
-                        />
-                      </div>
-
-                      <Input 
-                        label="Mobile Contact" 
-                        placeholder="+880..."
-                        value={formData.mobile} 
-                        onChange={(e: any) => setFormData({...formData, mobile: e.target.value})} 
-                      />
-                    </div>
-
-                    <button 
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full bg-indigo-600 text-white rounded-2xl px-8 py-5 text-sm font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus size={20} />
-                          Register as Family Member
-                        </>
-                      )}
-                    </button>
-                  </form>
-                ) : registrationStatus === 'success' ? (
-                  <motion.div 
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="h-full flex flex-col items-center justify-center text-center p-4"
-                  >
-                    <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-200">
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ type: "spring", damping: 12, stiffness: 200, delay: 0.2 }}
-                      >
-                        <CheckCircle2 size={48} className="text-emerald-500" />
-                      </motion.div>
-                    </div>
-                    <h4 className="text-2xl font-display font-bold text-foundation-900 mb-2">সাফল্য! (Success)</h4>
-                    <p className="text-foundation-600 mb-8 max-w-sm">
-                      Your registration has been successful. The member profile is now pending verification for trust.
-                    </p>
-                    <button 
-                      onClick={() => setRegistrationMode(false)}
-                      className="bg-foundation-900 text-white px-10 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all active:scale-95"
-                    >
-                      নিবন্ধকরণ সম্পন্ন করুন (Finish)
-                    </button>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="h-full flex flex-col items-center justify-center text-center p-4"
-                  >
-                    <div className="w-24 h-24 bg-rose-100 rounded-full flex items-center justify-center mb-6 shadow-sm border border-rose-200 text-rose-500">
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ type: "spring", damping: 12, stiffness: 200, delay: 0.2 }}
-                      >
-                        <XCircle size={48} />
-                      </motion.div>
-                    </div>
-                    <h4 className="text-2xl font-display font-bold text-foundation-900 mb-2">ত্রুটি! (Error)</h4>
-                    <p className="text-rose-600 mb-8 max-w-sm font-medium">
-                      {errorMessage || "নিবন্ধকরণ ব্যর্থ হয়েছে। দয়া করে আবার চেষ্টা করুন।"}
-                    </p>
-                    <div className="flex gap-4">
-                      <button 
-                        onClick={() => setRegistrationStatus('idle')}
-                        className="bg-foundation-900 text-white px-10 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all active:scale-95"
-                      >
-                        পুনরায় চেষ্টা করুন (Retry)
-                      </button>
-                      <button 
-                        onClick={() => setRegistrationMode(false)}
-                        className="bg-foundation-100 text-foundation-600 px-6 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-foundation-200 transition-all active:scale-95"
-                      >
-                        বাতিল (Cancel)
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-        {editingMember && editFormData && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setEditingMember(null)}
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
-                <div>
-                  <h3 className="text-xl font-display font-bold">প্রোফাইল সংশোধন (Update Profile)</h3>
-                  <p className="text-xs text-indigo-100 mt-1">Update member information</p>
-                </div>
-                <button 
-                  onClick={() => setEditingMember(null)}
-                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                <form onSubmit={handleUpdateProfile} className="space-y-6">
-                  <div className="grid grid-cols-1 gap-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Full Name (English)" 
-                        required 
-                        value={editFormData.displayName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, displayName: e.target.value})}
-                      />
-                      <div className="flex flex-col">
-                        <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Profile Photo</label>
-                        <div className="flex items-center gap-3 bg-foundation-50 p-2 rounded-xl border border-foundation-200">
-                          <img 
-                            src={editFormData.photoURL || `https://ui-avatars.com/api/?name=${editFormData.displayName}`} 
-                            className="w-10 h-10 rounded-lg object-cover bg-white" 
-                            alt="" 
-                          />
-                          <label className="flex-1 bg-white border border-foundation-300 rounded-lg py-2 text-[10px] text-center font-bold uppercase tracking-widest cursor-pointer hover:bg-foundation-50 transition-colors">
-                            <Camera size={12} className="inline mr-2" /> Change Photo
-                            <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                try {
-                                  const base64 = await handleImageUpload(file);
-                                  setEditFormData({...editFormData, photoURL: base64});
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }
-                            }} />
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Father's Name" 
-                        required 
-                        value={editFormData.fatherName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, fatherName: e.target.value})} 
-                      />
-                      <Input 
-                        label="Mother's Name" 
-                        value={editFormData.motherName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, motherName: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Village (গ্রাম)" 
-                        required 
-                        value={editFormData.village} 
-                        onChange={(e: any) => setEditFormData({...editFormData, village: e.target.value})} 
-                      />
-                      <Input 
-                        label="District (জেলা)" 
-                        required 
-                        value={editFormData.district} 
-                        onChange={(e: any) => setEditFormData({...editFormData, district: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="House Name (বাড়ির নাম)" 
-                        required 
-                        value={editFormData.houseName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, houseName: e.target.value})} 
-                      />
-                      <Input 
-                        label="Document Number (NID/Birth)" 
-                        value={editFormData.nidNumber} 
-                        onChange={(e: any) => setEditFormData({...editFormData, nidNumber: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Mobile Contact" 
-                        placeholder="+880..."
-                        value={editFormData.mobile} 
-                        onChange={(e: any) => setEditFormData({...editFormData, mobile: e.target.value})} 
-                      />
-                      <Input 
-                        label="Head of Family" 
-                        value={editFormData.familyHead} 
-                        onChange={(e: any) => setEditFormData({...editFormData, familyHead: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="relative">
-                      <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Short Bio</label>
-                      <textarea 
-                        value={editFormData.bio} 
-                        onChange={(e) => setEditFormData({...editFormData, bio: e.target.value})}
-                        className="w-full bg-foundation-50 border border-foundation-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
-                        placeholder="Tell us about yourself..."
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 pt-4">
-                    <button 
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="flex-1 bg-indigo-600 text-white rounded-xl px-8 py-4 text-sm font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Updating...
-                        </>
-                      ) : (
-                        <>
-                          <Save size={18} />
-                          Save Changes
-                        </>
-                      )}
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setEditingMember(null)}
-                      className="px-8 py-4 bg-foundation-100 text-foundation-600 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-foundation-200 transition-all"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-        {showSmartJoin && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] grid place-items-center p-4 bg-foundation-900/90 backdrop-blur-xl"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 30 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 30 }}
-              className="bg-white rounded-[3rem] w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 relative flex flex-col"
-            >
-              <div className="p-8 border-b border-foundation-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-display font-bold text-foundation-900">Document Scanner</h3>
-                  <p className="text-[10px] text-foundation-400 uppercase font-black">Verify Identity & Lineage</p>
-                </div>
-                <button 
-                  onClick={() => setShowSmartJoin(false)}
-                  className="p-3 bg-foundation-50 hover:bg-foundation-100 text-foundation-600 rounded-full transition-all"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                <AIBongshoSuite onResult={handleAIResult} />
-              </div>
-
-              <div className="p-6 bg-foundation-50 border-t border-foundation-100 text-center">
-                <p className="text-[10px] text-foundation-400 font-bold uppercase">Private & Secure • Data encrypted via AI</p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AISearchInterface members={members} isAdmin={isAdmin} />
-
-      <div className="bg-white rounded-xl shadow-sm border border-foundation-300 overflow-hidden relative">
-        <div className="p-6 border-b border-foundation-300">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <h3 className="text-xl font-display font-medium text-foundation-900">Family Directory</h3>
-            <form onSubmit={handleSmartSearch} className="relative w-full md:w-80">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" />
-              <input 
-                type="text"
-                placeholder="Ask AI or search (e.g. 'Dhaka members')..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (!e.target.value) setAiFilteredIds(null);
-                }}
-                className="w-full pl-9 pr-24 py-2.5 bg-foundation-100 rounded-xl border-2 border-transparent focus:border-indigo-500 focus:bg-white text-xs focus:outline-none transition-all"
-              />
-              <button 
-                type="submit"
-                disabled={isAISearching || !searchQuery.trim()}
-                className="absolute right-1.5 top-1.2 -translate-y-1/2 top-1/2 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-              >
-                {isAISearching ? <Loader2 size={10} className="animate-spin" /> : <Brain size={10} />}
-                Smart Search
-              </button>
-            </form>
-          </div>
-          <div className="flex items-center gap-4 mt-6">
-             <div className="text-right">
-                <p className="text-[10px] text-foundation-400 font-black uppercase tracking-widest">Active Members</p>
-                <p className="text-sm font-bold text-foundation-900">{members.filter(m => m.isApproved).length}</p>
-             </div>
-             <div className="h-8 w-px bg-foundation-200" />
-             <div className="text-right">
-                <p className="text-[10px] text-foundation-400 font-black uppercase tracking-widest">Pending</p>
-                <p className="text-sm font-bold text-amber-600">{members.filter(m => !m.isApproved).length}</p>
-             </div>
-          </div>
-        </div>
-        <div className="divide-y divide-foundation-200">
-        {filteredMembers.length === 0 ? (
-          <div className="p-12 text-center text-foundation-500 italic">
-            No members found matching your search.
-          </div>
-        ) : (
-          filteredMembers.map(member => (
-            <div key={member.uid} className={`relative p-4 flex items-center justify-between hover:bg-foundation-50 transition-colors group border-l-4 ${member.isApproved ? 'border-emerald-500' : 'border-amber-500 bg-amber-50/20'}`}>
-              <div 
-                className="flex items-center gap-4 cursor-pointer flex-1"
-                onClick={() => setSelectedMember(member)}
-              >
-                <img src={member.photoURL || `https://ui-avatars.com/api/?name=${member.displayName}`} alt="" className="w-10 h-10 rounded-full border border-foundation-300 transition-transform group-hover:scale-105" />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="font-bold text-foundation-900 text-sm group-hover:text-indigo-600 transition-colors">{member.displayName}</h4>
-                    {member.isApproved && <ShieldCheck size={12} className="text-emerald-500" />}
-                  </div>
-                  <p className="text-[10px] text-foundation-500 uppercase tracking-widest">{member.houseName} • {member.houseSegment}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {profile && profile.uid !== member.uid && member.email && (
-                  <DirectMessageButton 
-                    currentUser={profile} 
-                    targetUser={member} 
-                    onStartChat={(cid) => {
-                      setActiveConversationId(cid);
-                      setActiveTab('messages');
-                    }}
-                  />
-                )}
-                {isAdmin && (
-                  <div className="relative group/role">
-                    <select 
-                      value={member.role || 'member'}
-                      onChange={(e) => handleRoleChange(member.uid, e.target.value as any)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="appearance-none bg-foundation-100 text-foundation-700 text-[9px] font-black uppercase tracking-wider px-3 py-1 pr-6 rounded-full border border-foundation-200 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-foundation-200 transition-colors"
-                    >
-                      <option value="member">Member</option>
-                      <option value="collector">Collector</option>
-                      <option value="director">Director</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <Shield size={8} className="text-foundation-400" />
-                    </div>
-                  </div>
-                )}
-                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                  member.isApproved 
-                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm shadow-emerald-100' 
-                    : 'bg-amber-100 text-amber-700 border border-amber-200 animate-pulse-subtle shadow-sm shadow-amber-100'
-                }`}>
-                  {member.isApproved ? <CheckCircle2 size={10} /> : <Clock size={10} />}
-                  {member.isApproved ? 'Verified' : 'Pending'}
-                </div>
-                {canApprove && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); toggleApproval(member.uid, member.isApproved); }}
-                    className="p-2 hover:bg-foundation-300 rounded-full text-foundation-700 transition-colors"
-                    title={member.isApproved ? "Revoke" : "Approve"}
-                  >
-                    <ShieldCheck size={18} className={member.isApproved ? 'text-green-600' : 'text-foundation-400'} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-
-    <AnimatePresence>
-      {selectedMember && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSelectedMember(null)}
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="relative h-32 bg-foundation-900 overflow-hidden">
-                 <div className="absolute inset-0 opacity-20">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-400 rounded-full -ml-16 -mb-16 blur-2xl"></div>
-                 </div>
-                 <button 
-                  onClick={() => setSelectedMember(null)}
-                  className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
-                 >
-                   <X size={20} />
-                 </button>
-              </div>
-              
-              <div className="px-8 pb-8">
-                <div className="relative -mt-16 mb-6 flex flex-col items-center">
-                  <img 
-                    src={selectedMember.photoURL || `https://ui-avatars.com/api/?name=${selectedMember.displayName}`} 
-                    className="w-32 h-32 rounded-full border-4 border-white shadow-xl"
-                    alt="" 
-                  />
-                  <h3 className="text-2xl font-display font-bold text-foundation-900 mt-4">{selectedMember.displayName}</h3>
-                  <div className="flex gap-2 mt-1">
-                    <span className="px-3 py-1 bg-foundation-100 text-[10px] font-bold text-foundation-600 uppercase tracking-widest rounded-full">{selectedMember.houseName}</span>
-                    {selectedMember.isApproved && (
-                      <span className="px-3 py-1 bg-emerald-50 text-[10px] font-bold text-emerald-600 uppercase tracking-widest rounded-full flex items-center gap-1">
-                        <ShieldCheck size={10} /> Verified Member
-                      </span>
-                    )}
-                  </div>
-                  {(isAdmin || profile?.uid === selectedMember.uid) && (
-                    <button 
-                      onClick={() => setEditingMember(selectedMember)}
-                      className="mt-4 flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors"
-                    >
-                      <Edit3 size={14} /> Edit Profile
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-8">
-                  <div className="bg-foundation-50 rounded-2xl p-6 border border-foundation-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-bold text-foundation-900 uppercase tracking-widest flex items-center gap-2">
-                        <GitGraph size={16} className="text-indigo-600" /> Lineage Flow
-                      </h4>
-                    </div>
-                    <LineageVisualizer user={selectedMember} />
-                  </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
-                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Father's Name</p>
-                        <p className="text-sm font-bold text-foundation-900">{selectedMember.fatherName || 'Not recorded'}</p>
-                      </div>
-                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
-                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Mother's Name</p>
-                        <p className="text-sm font-bold text-foundation-900">{selectedMember.motherName || 'Not recorded'}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
-                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Village & House</p>
-                        <p className="text-sm font-bold text-foundation-900 capitalize">{selectedMember.village || 'N/A'}, {selectedMember.houseName}</p>
-                      </div>
-                      <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
-                        <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">District</p>
-                        <p className="text-sm font-bold text-foundation-900 capitalize">{selectedMember.district || 'N/A'}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4">
-                      <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl shadow-sm flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter mb-1">Document Index / NID</p>
-                          <p className="text-sm font-bold text-indigo-900 font-mono">{selectedMember.nidNumber || 'Not provided'}</p>
-                        </div>
-                        <Fingerprint size={24} className="text-indigo-300" />
-                      </div>
-                      <div className="bg-foundation-50 border border-foundation-200 p-4 rounded-xl shadow-sm">
-                        <p className="text-[10px] font-bold text-foundation-400 uppercase tracking-tighter mb-1">Member ID</p>
-                        <p className="text-xs font-bold text-foundation-600">{selectedMember.memberId || 'HB-NEW-MEMBER'}</p>
-                      </div>
-                    </div>
-                    <div className="bg-white border border-foundation-200 p-4 rounded-xl shadow-sm">
-                      <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter mb-1">Head of Family</p>
-                      <p className="text-sm font-bold text-foundation-900">{selectedMember.familyHead || 'Not Recorded'}</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-foundation-900 text-white p-6 rounded-2xl shadow-xl">
-                    <h4 className="text-xs font-bold uppercase tracking-[0.2em] mb-4 text-foundation-300">Contact Information</h4>
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                          <Mail size={14} /> 
-                        </div>
-                        <div>
-                          <p className="text-[8px] uppercase font-bold text-foundation-400">Email Address</p>
-                          <p className="text-xs font-medium">{selectedMember.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                          <Smartphone size={14} />
-                        </div>
-                        <div>
-                          <p className="text-[8px] uppercase font-bold text-foundation-400">Phone Number</p>
-                          <p className="text-xs font-mono font-bold tracking-wider">{selectedMember.mobile || 'Not Provided'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function AdminDashboard() {
-  const [adminTab, setAdminTab] = useState<'users' | 'contributions'>('users');
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-foundation-300 self-start">
-        <button 
-          onClick={() => setAdminTab('users')}
-          className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${adminTab === 'users' ? 'bg-foundation-900 text-white shadow-md' : 'text-foundation-500 hover:bg-foundation-100'}`}
-        >
-          User Approvals
-        </button>
-        <button 
-          onClick={() => setAdminTab('contributions')}
-          className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${adminTab === 'contributions' ? 'bg-foundation-900 text-white shadow-md' : 'text-foundation-500 hover:bg-foundation-100'}`}
-        >
-          Contributions
-        </button>
-      </div>
-
-      {adminTab === 'users' ? <AdminApprovalList /> : <PendingContributionsList />}
-    </div>
-  );
-}
-
-function Committee({ profile, isAdmin }: { profile: UserProfile | null, isAdmin: boolean }) {
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const leaders = [
-    { name: 'ফারুক আহাম্মাদ', role: 'প্রধান উপদেষ্টা', subTitle: 'হাজি বাড়ি ফাউন্ডেশন' },
-    { name: 'মোঃ মনির আহমেদ (আরেফিন)', role: 'প্রতিষ্ঠাতা পরিচালক', subTitle: 'হাজি বাড়ি ফাউন্ডেশন' },
-    { name: 'নূর আলম', role: 'উন্নয়ন পরিকল্পনাবিদ', subTitle: 'হাজি বাড়ি ফাউন্ডেশন' },
-    { name: 'আরমান', role: 'উন্নয়ন পরিকল্পনাবিদ', subTitle: 'হাজি বাড়ি ফাউন্ডেশন' },
-    { name: 'আশিক', role: 'শিক্ষাাবিদ', subTitle: 'হাজি বাড়ি ফাউন্ডেশন' },
-    { name: 'আরিফ', role: 'শিক্ষাাবিদ', subTitle: 'হাজি বাড়ি ফাউন্ডেশন' },
-  ];
-
-  if (showAdminPanel && isAdmin) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xl font-display font-medium text-foundation-900">Admin Dashboard</h3>
-          <button 
-            onClick={() => setShowAdminPanel(false)}
-            className="text-xs font-bold text-foundation-600 hover:text-foundation-900 flex items-center gap-2"
-          >
-            <ArrowLeft size={16} /> Back to Committee
-          </button>
-        </div>
-        <AdminDashboard />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-8">
-      <div className="flex flex-col items-center text-center space-y-4">
-        <div className="space-y-2">
-          <h3 className="text-3xl font-display text-foundation-900">Administrative Committee</h3>
-          <p className="text-foundation-600 italic">"Governance with Transparency & Dedication"</p>
-        </div>
-        
-        {isAdmin && (
-          <button 
-            onClick={() => setShowAdminPanel(true)}
-            className="flex items-center gap-2 px-6 py-2 bg-foundation-900 text-white rounded-full text-xs font-bold hover:bg-black transition-all shadow-lg hover:scale-105 active:scale-95"
-          >
-            <ShieldCheck size={16} /> Open Admin Panel
-          </button>
-        )}
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {leaders.map((leader, i) => (
-          <div key={i} className="bg-white p-8 rounded-2xl border border-foundation-300 flex flex-col items-center text-center shadow-sm hover:shadow-md transition-shadow">
-            <div className="w-20 h-20 rounded-full bg-foundation-200 border-2 border-foundation-400 mb-4 grid place-items-center">
-              <UserIcon size={32} className="text-foundation-600" />
-            </div>
-            <h4 className="text-xl font-bold text-foundation-900 mb-1">{leader.name}</h4>
-            <span className="px-4 py-1 bg-foundation-900 text-white text-[10px] uppercase tracking-[0.2em] rounded-full mb-2">
-              {leader.role}
-            </span>
-            <p className="text-xs text-foundation-500 italic">{leader.subTitle}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PendingContributionsList() {
-  const [pendingContributions, setPendingContributions] = useState<Contribution[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const q = query(collection(db, 'contributions'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setPendingContributions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contribution)));
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'contributions'));
-    return () => unsubscribe();
-  }, []);
-
-  const handleApprove = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'contributions', id), { status: 'approved' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `contributions/${id}`);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this contribution record?')) {
-      try {
-        await deleteDoc(doc(db, 'contributions', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `contributions/${id}`);
-      }
-    }
-  };
-
-  if (loading) return <div className="p-12 text-center text-foundation-400">Scanning for pending contributions...</div>;
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-foundation-300 overflow-hidden">
-        <div className="p-4 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <DollarSign size={16} className="text-emerald-600" />
-            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
-              Pending Contributions ({pendingContributions.length})
-            </span>
-          </div>
-        </div>
-        
-        <div className="divide-y divide-foundation-100">
-          {pendingContributions.length === 0 ? (
-            <div className="p-12 text-center text-foundation-400 italic text-xs">
-              No pending project contributions found.
-            </div>
-          ) : (
-            pendingContributions.map(c => (
-              <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-foundation-50 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <img src={c.userPhotoURL || `https://ui-avatars.com/api/?name=${c.userName}`} alt="" className="w-12 h-12 rounded-full border border-foundation-200" />
-                    <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-white
-                      ${c.method === 'bkash' ? 'bg-[#D12053]' : 
-                        c.method === 'nagad' ? 'bg-[#F34925]' : 
-                        c.method === 'bank' ? 'bg-blue-600' : 'bg-emerald-600'}
-                    `}>
-                      <DollarSign size={10} />
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-foundation-900 truncate">{c.userName}</h4>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="text-[12px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                        {c.amount.toLocaleString()} BDT
-                      </span>
-                      <span className="text-[9px] uppercase font-bold text-foundation-500 bg-foundation-200 px-2 py-0.5 rounded">
-                        {c.method}
-                      </span>
-                      <span className="text-[9px] font-mono text-foundation-400 bg-foundation-100 px-2 py-0.5 rounded border border-foundation-200">
-                        TXID: {c.transactionId}
-                      </span>
-                    </div>
-                    {c.createdAt && (
-                      <p className="text-[9px] text-foundation-400 mt-1 flex items-center gap-1">
-                        <Clock size={8} /> 
-                        {c.createdAt?.toDate ? format(c.createdAt.toDate(), 'MMM d, h:mm a') : 'Just now'}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleApprove(c.id)}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-medium hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
-                  >
-                    <CheckCircle2 size={12} /> Approve
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(c.id)}
-                    className="p-2 text-foundation-400 hover:text-red-600 transition-colors border border-foundation-200 hover:border-red-100 rounded-lg"
-                    title="Reject Record"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AdminApprovalList() {
-  const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const q = query(collection(db, 'users'), where('isApproved', '==', false));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setPendingUsers(snap.docs.map(d => d.data() as UserProfile));
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'users'));
-    return () => unsubscribe();
-  }, []);
-
-  const handleApprove = async (uid: string) => {
-    try {
-      await updateDoc(doc(db, 'users', uid), { isApproved: true });
-      // Notify user? Maybe later.
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
-    }
-  };
-
-  if (loading) return <div className="p-12 text-center text-foundation-400">Scanning for pending registrations...</div>;
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-foundation-300 overflow-hidden">
-        <div className="p-4 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-amber-700 uppercase tracking-widest flex items-center gap-2">
-            <Clock size={14} /> Pending Approvals ({pendingUsers.length})
-          </span>
-        </div>
-        
-        <div className="divide-y divide-foundation-100">
-          {pendingUsers.length === 0 ? (
-            <div className="p-12 text-center text-foundation-400 italic text-xs">
-              All member requests have been processed.
-            </div>
-          ) : (
-            pendingUsers.map(user => (
-              <div key={user.uid} className="p-4 flex items-center justify-between hover:bg-foundation-50 transition-colors">
-                <div className="flex items-center gap-4">
-                  <img src={user.photoURL || undefined} alt="" className="w-12 h-12 rounded-full border border-foundation-200" />
-                  <div>
-                    <h4 className="text-sm font-bold text-foundation-900">{user.displayName}</h4>
-                    <p className="text-[10px] text-foundation-500">{user.email}</p>
-                    <div className="flex gap-2 mt-1">
-                      <span className="text-[9px] bg-foundation-200 text-foundation-600 px-1.5 py-0.5 rounded font-medium">{user.houseName}</span>
-                      <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{user.village}, {user.district}</span>
-                      <span className="text-[9px] bg-foundation-200 text-foundation-600 px-1.5 py-0.5 rounded font-medium">NID: {user.nidNumber}</span>
-                      <span className="text-[9px] bg-foundation-200 text-foundation-600 px-1.5 py-0.5 rounded font-medium">{user.mobile}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleApprove(user.uid)}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition-all"
-                  >
-                    <CheckCircle2 size={12} /> Approve
-                  </button>
-                  <button 
-                    className="p-2 text-foundation-400 hover:text-red-600 transition-colors"
-                    title="Reject (Delete Request)"
-                    onClick={async () => {
-                      if (confirm(`Reject registration for ${user.displayName}?`)) {
-                        try {
-                          await deleteDoc(doc(db, 'users', user.uid));
-                        } catch (err) {
-                          handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}`);
-                        }
-                      }
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LineageVisualizer({ user }: { user: UserProfile }) {
-  const [lineage, setLineage] = useState<UserProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [potentialMatches, setPotentialMatches] = useState<UserProfile[]>([]);
-
-  useEffect(() => {
-    const fetchLineage = async () => {
-      setIsLoading(true);
-      let current: UserProfile | null = user;
-      const path: UserProfile[] = [];
-      const visited = new Set();
-      visited.add(user.uid);
-
-      while (current?.fatherId && !visited.has(current.fatherId)) {
-        visited.add(current.fatherId);
-        try {
-          const snap = await getDoc(doc(db, 'users', current.fatherId));
-          if (snap.exists()) {
-            const father = snap.data() as UserProfile;
-            path.push(father);
-            current = father;
-          } else {
-            break;
-          }
-        } catch (err) {
-          console.error("Error fetching lineage:", err);
-          break;
-        }
-        if (path.length >= 12) break; // Deep lineage
-      }
-      setLineage(path);
-      setIsLoading(false);
-
-      // Look for matches for the last ancestor's father
-      const lastKnown = path.length > 0 ? path[path.length - 1] : user;
-      if (lastKnown.fatherName && !lastKnown.fatherId) {
-        const q = query(
-          collection(db, 'users'), 
-          where('displayName', '==', lastKnown.fatherName),
-          where('isApproved', '==', true),
-          limit(3)
-        );
-        const matchSnap = await getDocs(q);
-        setPotentialMatches(matchSnap.docs.map(d => d.data() as UserProfile));
-      }
-    };
-
-    fetchLineage();
-  }, [user.uid, user.fatherId]);
-
-  const handleQuickLink = async (fatherUid: string, childUid: string) => {
-    try {
-      await updateDoc(doc(db, 'users', childUid), { fatherId: fatherUid });
-      alert("Lineage linked successfully!");
-      window.location.reload(); // Refresh to show new chain
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${childUid}`);
-    }
-  };
-
-  if (isLoading) return <div className="animate-pulse flex flex-col items-center gap-4 py-8">
-    <div className="w-12 h-12 bg-foundation-200 rounded-full" />
-    <div className="w-1 h-8 bg-foundation-100" />
-    <div className="w-10 h-10 bg-foundation-100 rounded-full" />
-  </div>;
-
-  const labels = ['বাবা (Father)', 'দাদা (Grandfather)', 'পরদাদা (G-Grandfather)', 'দাদার বাবা', 'তাঁর বাবা', 'তাঁর বাবা', 'তাঁর বাবা'];
-
-  return (
-    <div className="flex flex-col items-center py-6">
-      <div className="flex flex-col items-center group mb-4">
-        <div className="text-[10px] font-bold text-foundation-400 uppercase tracking-widest mb-2 italic">নিজ (Self)</div>
-        <img src={user.photoURL || undefined} className="w-16 h-16 rounded-full border-4 border-foundation-900 p-1 shadow-lg ring-4 ring-foundation-100" alt="" />
-        <span className="text-sm font-bold text-foundation-900 mt-2">{user.displayName}</span>
-      </div>
-
-      {lineage.map((anc, i) => (
-        <React.Fragment key={anc.uid}>
-          <div className="h-10 w-1 bg-gradient-to-b from-foundation-900 via-amber-400 to-amber-100 opacity-40 relative">
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-amber-500 rounded-full border border-white" />
-          </div>
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="flex flex-col items-center group py-2"
-          >
-            <div className="text-[9px] font-bold text-amber-600 uppercase tracking-tighter mb-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-              {labels[i] || `${i + 1}th Ancestor`}
-            </div>
-            <div className="relative hover:scale-110 transition-transform">
-              <img src={anc.photoURL || `https://ui-avatars.com/api/?name=${anc.displayName}&background=fde68a&color=92400e`} className="w-14 h-14 rounded-full border-2 border-amber-400 p-0.5 shadow-md" alt="" />
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 rounded-full border-2 border-white flex items-center justify-center shadow-sm">
-                <Sparkles size={10} className="text-white" />
-              </div>
-            </div>
-            <span className="text-sm font-bold text-foundation-800 mt-2">{anc.displayName}</span>
-            <div className="flex flex-col items-center">
-              <p className="text-[9px] text-amber-700 font-medium px-2 py-0.5 bg-amber-50 rounded-md mt-1 italic">{anc.houseName} • {anc.houseSegment}</p>
-              {anc.motherName && <p className="text-[8px] text-foundation-500 italic mt-0.5">M: {anc.motherName}</p>}
-            </div>
-          </motion.div>
-        </React.Fragment>
-      ))}
-
-      {/* Suggestion for the top of the chain */}
-      {(lineage.length === 0 || potentialMatches.length > 0) && (
-        <div className="mt-6 w-full max-w-sm">
-          <div className="h-6 w-px bg-foundation-300 mx-auto opacity-50 border-dashed border-l" />
-          <div className="bg-white p-4 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30 text-center">
-            {lineage.length === 0 && !user.fatherId ? (
-              <>
-                <p className="text-xs font-bold text-indigo-900 mb-1">বংশের ধারাবাহিকতা শুরু করুন</p>
-                <p className="text-[10px] text-indigo-600 mb-4 italic">"{user.fatherName}" এর রেকর্ড আমাদের সিস্টেমে আছে কি না তা যাচাই করুন</p>
-              </>
-            ) : potentialMatches.length > 0 ? (
-              <>
-                <div className="flex items-center justify-center gap-2 mb-3">
-                  <Brain size={16} className="text-indigo-600" />
-                  <p className="text-xs font-bold text-indigo-900">অটো সাজেস্ট: {lineage.length > 0 ? lineage[lineage.length-1].fatherName : user.fatherName}</p>
-                </div>
-                <div className="space-y-2">
-                  {potentialMatches.map(match => (
-                    <div key={match.uid} className="flex items-center justify-between bg-white p-2 rounded-xl border border-indigo-100 shadow-sm">
-                      <div className="flex items-center gap-2">
-                        <img src={match.photoURL || ""} className="w-8 h-8 rounded-full border" alt="" />
-                        <div className="text-left">
-                          <p className="text-[10px] font-bold text-foundation-900">{match.displayName}</p>
-                          <p className="text-[8px] text-foundation-500">{match.houseName}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleQuickLink(match.uid, lineage.length > 0 ? lineage[lineage.length-1].uid : user.uid)}
-                        className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-[9px] font-bold hover:bg-indigo-700 transition-all"
-                      >
-                        Link
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="text-[10px] text-foundation-400 italic">No more automatic links found. Encourage your relatives to register!</p>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProfileComponent({ profile }: { profile: UserProfile | null }) {
-  const [isUploading, setIsUploading] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editFormData, setEditFormData] = useState<any>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (profile && isEditing) {
-      setEditFormData({
-        displayName: profile.displayName || '',
-        fatherName: profile.fatherName || '',
-        motherName: profile.motherName || '',
-        houseName: profile.houseName || '',
-        village: profile.village || '',
-        district: profile.district || '',
-        nidNumber: profile.nidNumber || '',
-        mobile: profile.mobile || '',
-        familyHead: profile.familyHead || '',
-        bio: profile.bio || '',
-      });
-    }
-  }, [profile, isEditing]);
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile || !editFormData) return;
-    setIsSubmitting(true);
-    try {
-      await updateDoc(doc(db, 'users', profile.uid), {
-        ...editFormData,
-        updatedAt: serverTimestamp()
-      });
-      setIsEditing(false);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${profile.uid}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const onPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !profile) return;
-    setIsUploading(true);
-    try {
-      const base64 = await handleImageUpload(file);
-      await updateDoc(doc(db, 'users', profile.uid), { photoURL: base64 });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${profile.uid}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white p-8 rounded-2xl border border-foundation-300 shadow-sm text-center relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4">
-          <button 
-            onClick={() => setIsEditing(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-foundation-100 text-foundation-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-foundation-200 transition-all active:scale-95 border border-foundation-200"
-          >
-            <Edit3 size={14} /> Edit Profile
-          </button>
-        </div>
-        
-        <div className="relative w-32 h-32 mx-auto mb-6">
-          <div className="w-full h-full rounded-full overflow-hidden border-4 border-foundation-100 shadow-inner bg-foundation-50 relative group">
-            <img src={profile?.photoURL || undefined} alt="" className="w-full h-full object-cover" />
-            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
-              <Camera size={24} className="text-white" />
-              <input type="file" className="hidden" accept="image/*" onChange={onPhotoUpload} />
-            </label>
-            {isUploading && (
-              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
-              </div>
-            )}
-          </div>
-          {profile?.isApproved && (
-            <div className="absolute bottom-1 right-1 w-8 h-8 bg-foundation-500 rounded-full border-4 border-white flex items-center justify-center z-10 shadow-lg">
-              <ShieldCheck size={14} className="text-white" />
-            </div>
-          )}
-        </div>
-        <h3 className="text-2xl font-display font-bold text-foundation-900">{profile?.displayName}</h3>
-        <p className="text-sm text-foundation-500 flex items-center justify-center gap-2 mt-1">
-          <Users size={14} /> {profile?.houseName}
-        </p>
-        
-        <div className="mt-8 flex justify-center gap-4">
-          <div className="px-4 py-2 bg-foundation-300 rounded-lg">
-            <p className="text-[10px] uppercase font-bold text-foundation-600 tracking-wider">Status</p>
-            <p className="text-sm font-bold text-foundation-900">{profile?.isApproved ? 'Verified' : 'Pending Approval'}</p>
-          </div>
-          <div className="px-4 py-2 bg-foundation-300 rounded-lg">
-            <p className="text-[10px] uppercase font-bold text-foundation-600 tracking-wider">Role</p>
-            <p className="text-sm font-bold text-foundation-900 capitalize">{profile?.role}</p>
-          </div>
-        </div>
-        
-        <div className="mt-6 pt-6 border-t border-foundation-100">
-          <label className="flex items-center justify-center gap-3 cursor-pointer group">
-            <input 
-              type="checkbox"
-              checked={profile?.isPublicContribution ?? true}
-              onChange={async (e) => {
-                if (!profile) return;
-                try {
-                  await updateDoc(doc(db, 'users', profile.uid), { isPublicContribution: e.target.checked });
-                } catch (err) {
-                  handleFirestoreError(err, OperationType.UPDATE, `users/${profile.uid}`);
-                }
-              }}
-              className="w-4 h-4 rounded border-foundation-300 text-foundation-900 focus:ring-foundation-500"
-            />
-            <span className="text-xs text-foundation-600 group-hover:text-foundation-900 transition-colors capitalize">
-              Show my name publicly on project contributions
-            </span>
-          </label>
-        </div>
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-foundation-300 shadow-sm space-y-6">
-        <div className="flex items-center justify-between border-b border-foundation-200 pb-4">
-          <h4 className="font-display font-medium text-xl">Lineage Flow (বংশের ধারাবাহিকতা)</h4>
-          <GitGraph size={20} className="text-amber-500" />
-        </div>
-        
-        {profile && <LineageVisualizer user={profile} />}
-        
-        {profile && !profile.fatherId && (
-          <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 text-center">
-            <p className="text-[11px] text-amber-700 font-bold mb-2">AUTO-LINK SUGGESTION</p>
-            <p className="text-xs text-amber-900 border-b border-amber-100 pb-2 mb-2 italic">
-              "Based on your record, you are the son of {profile.fatherName}"
-            </p>
-            <FatherLinkSelector profile={profile} />
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-foundation-300 shadow-sm space-y-6">
-        <h4 className="font-display font-medium text-xl border-b border-foundation-200 pb-4">Personal Records</h4>
-        <dl className="grid grid-cols-2 gap-y-4">
-          <dt className="text-xs font-bold text-foundation-500 uppercase">Father's Name</dt>
-          <dd className="text-sm text-foundation-900">{profile?.fatherName}</dd>
-          <dt className="text-xs font-bold text-foundation-500 uppercase">Mother's Name</dt>
-          <dd className="text-sm text-foundation-900">{profile?.motherName || 'Not Recorded'}</dd>
-          <dt className="text-xs font-bold text-foundation-500 uppercase">Head of Family</dt>
-          <dd className="text-sm text-foundation-900">{profile?.familyHead}</dd>
-          <dt className="text-xs font-bold text-foundation-500 uppercase">House Segment</dt>
-          <dd className="text-sm text-foundation-900">{profile?.houseSegment}</dd>
-          <dt className="text-xs font-bold text-foundation-500 uppercase">Mobile</dt>
-          <dd className="text-sm text-foundation-900 font-mono italic">{profile?.mobile}</dd>
-        </dl>
-      </div>
-
-      <div className="bg-white p-8 rounded-2xl border border-foundation-300 shadow-sm space-y-6">
-        <h4 className="font-display font-medium text-xl border-b border-foundation-200 pb-4">Contact Information</h4>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-foundation-100 flex items-center justify-center text-foundation-600">
-              <Mail size={18} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter">Email Address</p>
-              <p className="text-sm font-bold text-foundation-900 truncate" title={profile?.email}>{profile?.email}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-foundation-100 flex items-center justify-center text-foundation-600">
-              <Smartphone size={18} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-tighter">Phone Number</p>
-              <p className="text-sm font-bold text-foundation-900 font-mono">{profile?.mobile}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {!profile?.fatherId && (
-        <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-2xl">
-          <div className="flex gap-4">
-            <GitGraph className="text-yellow-600 shrink-0" size={24} />
-            <div>
-              <h4 className="font-bold text-yellow-900 text-sm italic">Link your lineage!</h4>
-              <p className="text-xs text-yellow-700 mt-1">Search for your father in the foundation records to build your family tree.</p>
-              <FatherLinkSelector profile={profile} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {isEditing && editFormData && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setIsEditing(false)}
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
-                <div>
-                  <h3 className="text-xl font-display font-bold">প্রোফাইল সংশোধন (Update Profile)</h3>
-                  <p className="text-xs text-indigo-100 mt-1">Update your member information</p>
-                </div>
-                <button 
-                  onClick={() => setIsEditing(false)}
-                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                <form onSubmit={handleUpdateProfile} className="space-y-6">
-                  <div className="grid grid-cols-1 gap-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Full Name (English)" 
-                        required 
-                        value={editFormData.displayName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, displayName: e.target.value})}
-                      />
-                      <div className="flex flex-col">
-                        <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Profile Photo</label>
-                        <div className="flex items-center gap-3 bg-foundation-50 p-2 rounded-xl border border-foundation-200">
-                          <img 
-                            src={editFormData.photoURL || `https://ui-avatars.com/api/?name=${editFormData.displayName}`} 
-                            className="w-10 h-10 rounded-lg object-cover bg-white" 
-                            alt="" 
-                          />
-                          <label className="flex-1 bg-white border border-foundation-300 rounded-lg py-2 text-[10px] text-center font-bold uppercase tracking-widest cursor-pointer hover:bg-foundation-50 transition-colors">
-                            <Camera size={12} className="inline mr-2" /> Change Photo
-                            <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                try {
-                                  const base64 = await handleImageUpload(file);
-                                  setEditFormData({...editFormData, photoURL: base64});
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }
-                            }} />
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Father's Name" 
-                        required 
-                        value={editFormData.fatherName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, fatherName: e.target.value})} 
-                      />
-                      <Input 
-                        label="Mother's Name" 
-                        value={editFormData.motherName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, motherName: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Village (গ্রাম)" 
-                        required 
-                        value={editFormData.village} 
-                        onChange={(e: any) => setEditFormData({...editFormData, village: e.target.value})} 
-                      />
-                      <Input 
-                        label="District (জেলা)" 
-                        required 
-                        value={editFormData.district} 
-                        onChange={(e: any) => setEditFormData({...editFormData, district: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="House Name (বাড়ির নাম)" 
-                        required 
-                        value={editFormData.houseName} 
-                        onChange={(e: any) => setEditFormData({...editFormData, houseName: e.target.value})} 
-                      />
-                      <Input 
-                        label="Document Number (NID/Birth)" 
-                        value={editFormData.nidNumber} 
-                        onChange={(e: any) => setEditFormData({...editFormData, nidNumber: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <Input 
-                        label="Mobile Contact" 
-                        placeholder="+880..."
-                        value={editFormData.mobile} 
-                        onChange={(e: any) => setEditFormData({...editFormData, mobile: e.target.value})} 
-                      />
-                      <Input 
-                        label="Head of Family" 
-                        value={editFormData.familyHead} 
-                        onChange={(e: any) => setEditFormData({...editFormData, familyHead: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="relative">
-                      <label className="block text-[10px] font-bold text-foundation-500 uppercase tracking-widest mb-1 ml-1">Short Bio</label>
-                      <textarea 
-                        value={editFormData.bio} 
-                        onChange={(e) => setEditFormData({...editFormData, bio: e.target.value})}
-                        className="w-full bg-foundation-50 border border-foundation-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
-                        placeholder="Tell us about yourself..."
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 pt-4">
-                    <button 
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="flex-1 bg-indigo-600 text-white rounded-xl px-8 py-4 text-sm font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Updating...
-                        </>
-                      ) : (
-                        <>
-                          <Save size={18} />
-                          Save Changes
-                        </>
-                      )}
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="px-8 py-4 bg-foundation-100 text-foundation-600 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-foundation-200 transition-all"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function FatherLinkSelector({ profile }: { profile: UserProfile | null }) {
-  const [search, setSearch] = useState('');
-  const [results, setResults] = useState<UserProfile[]>([]);
-
-  useEffect(() => {
-    if (search.length > 2) {
-      const q = query(collection(db, 'users'), where('isApproved', '==', true));
-      const unsub = onSnapshot(q, (snap) => {
-        const found = snap.docs
-          .map(d => d.data() as UserProfile)
-          .filter(u => u.displayName.toLowerCase().includes(search.toLowerCase()) && u.uid !== profile?.uid);
-        setResults(found);
-      });
-      return () => unsub();
-    } else {
-      setResults([]);
-    }
-  }, [search, profile?.uid]);
-
-  const selectFather = async (father: UserProfile) => {
-    if (!profile) return;
-    try {
-      await updateDoc(doc(db, 'users', profile.uid), {
-        fatherId: father.uid,
-        fatherName: father.displayName
-      });
-      setSearch('');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${profile.uid}`);
-    }
-  };
-
-  return (
-    <div className="mt-4 space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" size={14} />
-        <input 
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search for father's name..."
-          className="w-full pl-10 pr-4 py-2 bg-white rounded-lg border border-foundation-300 text-xs focus:ring-2 focus:ring-foundation-500 focus:outline-none"
-        />
-      </div>
-      {results.length > 0 && (
-        <div className="bg-white border border-foundation-300 rounded-lg overflow-hidden shadow-lg">
-          {results.map(r => (
-            <button 
-              key={r.uid}
-              onClick={() => selectFather(r)}
-              className="w-full text-left p-3 hover:bg-foundation-200 flex items-center gap-3 transition-colors border-b last:border-none border-foundation-200"
-            >
-              <img src={r.photoURL || undefined} className="w-8 h-8 rounded-full" alt="" />
-              <div>
-                <p className="text-xs font-bold text-foundation-900">{r.displayName}</p>
-                <p className="text-[10px] text-foundation-500">{r.houseName}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const handleImageUpload = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Limit size for Firestore
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        resolve(dataUrl);
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-};
-
-function AIBongshoSuite({ onResult }: { onResult: (child: string, parent: string, fullSuggestion?: any) => void }) {
-  const [activeMode, setActiveMode] = useState<'dictator' | 'oracle' | 'scanner'>('dictator');
-  const [input, setInput] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [dbMatches, setDbMatches] = useState<any[]>([]);
-  const [oracleMessages, setOracleMessages] = useState<{ role: 'user' | 'model', content: string, attachments?: { mimeType: string, url: string }[] }[]>([]);
-  const [chatAttachments, setChatAttachments] = useState<{ file: File, preview: string }[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const chatFileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [oracleMessages, isAnalyzing]);
-
-  const handleChatFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (prev) => {
-        setChatAttachments(p => [...p, { file, preview: prev.target?.result as string }]);
-      };
-      if (file.type.startsWith('image/')) {
-        reader.readAsDataURL(file);
-      } else {
-        setChatAttachments(p => [...p, { file, preview: '' }]); // Placeholder for docs
-      }
-    });
-  };
-
-  const removeAttachment = (index: number) => {
-    setChatAttachments(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const [isListening, setIsListening] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const startCamera = async () => {
-    try {
-      setIsCameraActive(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      console.error("Camera error:", err);
-      setIsCameraActive(false);
-      alert("Could not access camera. Please check permissions.");
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraActive(false);
-  };
-
-  const captureFrame = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    canvas.toBlob(async (blob) => {
-      if (!blob) return;
-      stopCamera();
-      
-      setIsAnalyzing(true);
-      setSuggestions([]);
-      setDbMatches([]);
-      
-      try {
-        const buffer = await blob.arrayBuffer();
-        const result = await analyzeLineageImage(buffer, 'image/jpeg');
-        if (result) {
-          setSuggestions([result]);
-          const merged = mergeSuggestions([result]);
-          if (merged.confidence > 0.6) {
-             setTimeout(() => {
-               onResult(merged.subject?.name || '', merged.father?.name || '', merged);
-             }, 2000);
-          }
-        }
-      } catch (err) {
-        console.error("Camera scan error:", err);
-      } finally {
-        setIsAnalyzing(false);
-      }
-    }, 'image/jpeg', 0.95);
-  };
-
-  const mergeSuggestions = (newSuggestions: any[]) => {
-    const merged = { ...newSuggestions[0] };
-    
-    newSuggestions.slice(1).forEach(suggest => {
-      if (!merged.subject?.name && suggest.subject?.name) merged.subject = suggest.subject;
-      if (!merged.father?.name && suggest.father?.name) merged.father = suggest.father;
-      if (!merged.mother?.name && suggest.mother?.name) merged.mother = suggest.mother;
-      if ((!merged.village || merged.village === 'null') && suggest.village) merged.village = suggest.village;
-      if ((!merged.district || merged.district === 'null') && suggest.district) merged.district = suggest.district;
-      if (!merged.nidNumber && suggest.nidNumber) merged.nidNumber = suggest.nidNumber;
-      if (!merged.house && suggest.house) merged.house = suggest.house;
-    });
-
-    return merged;
-  };
-
-  const handleAnalze = async () => {
-    if (!input.trim()) return;
-    const userMsg = input;
-    setInput('');
-    setIsAnalyzing(true);
-    setSuggestions([]);
-    
-    if (activeMode === 'oracle') {
-      const currentAttachments = [...chatAttachments];
-      const attData = await Promise.all(currentAttachments.map(async att => {
-        return new Promise<{ mimeType: string, data: string }>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve({
-              mimeType: att.file.type,
-              data: base64
-            });
+      setProjects(prev => prev.map(p => {
+        if (p.id === selectedProjectId) {
+          return {
+            ...p,
+            logs: [signupLog, ...p.logs]
           };
-          reader.readAsDataURL(att.file);
-        });
+        }
+        return p;
       }));
 
-      setOracleMessages(prev => [...prev, { 
-        role: 'user', 
-        content: userMsg,
-        attachments: currentAttachments.map(a => ({ mimeType: a.file.type, url: a.preview }))
-      }]);
-      setChatAttachments([]);
-      
-      const q = query(collection(db, 'users'), where('isApproved', '==', true), limit(100));
-      const snap = await getDocs(q);
-      const context = snap.docs.map(d => {
-        const u = d.data();
-        return `${u.displayName} (son of ${u.fatherName || 'Unknown'})`;
-      }).join(', ');
-      
-      const answer = await answerTreeQuestion(userMsg, context, oracleMessages.map(m => ({ role: m.role, content: m.content })), attData);
-      setOracleMessages(prev => [...prev, { role: 'model', content: answer }]);
-    } else if (activeMode === 'dictator') {
-      const result = await detectLineage(userMsg);
-      if (result) setSuggestions([result]);
-    }
-    
-    setIsAnalyzing(false);
+      // Pop lots of energetic confetti for Google Sign-up Success
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#4285F4', '#EA4335', '#FBBC05', '#34A853'] // Google Palette
+      });
+    }, 1200);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    setIsAnalyzing(true);
-    setSuggestions([]);
-    setDbMatches([]);
-
-    const newSuggestions: any[] = [];
-
-    for (const fileObj of files) {
-      const file = fileObj as File;
-      try {
-        const buffer = await file.arrayBuffer();
-        const result = await analyzeLineageImage(buffer, file.type);
-        if (result) newSuggestions.push(result);
-      } catch (err) {
-        console.error("Error analyzing file:", file.name, err);
-      }
-    }
-
-    setIsAnalyzing(false);
-    
-    if (newSuggestions.length > 0) {
-      const merged = mergeSuggestions(newSuggestions);
-      setSuggestions(newSuggestions);
-      
-      // Use the merged data for the final result
-      if (merged.confidence > 0.7) {
-         setTimeout(() => {
-           onResult(merged.subject?.name || '', merged.father?.name || '', merged);
-         }, 2500);
-      }
-      
-      // Search for potential database matches using any of the data
-      const matches: any[] = [];
-      const usersRef = collection(db, 'users');
-      
-      for (const res of newSuggestions) {
-        try {
-          if (res.father?.name) {
-            const q = query(usersRef, where('displayName', '==', res.father.name));
-            const snap = await getDocs(q);
-            snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'father' }));
-          }
-          if (res.mother?.name) {
-            const q = query(usersRef, where('displayName', '==', res.mother.name));
-            const snap = await getDocs(q);
-            snap.forEach(doc => matches.push({ ...doc.data(), matchType: 'mother' }));
-          }
-        } catch (err) {
-          console.error("Fetch match error:", err);
-        }
-      }
-      setDbMatches(matches);
-    }
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setShowOneTap(false);
+    // Remove dismissed to allow testing again
+    localStorage.removeItem('hazibari_onetap_dismissed');
+    setOneTapDismissed(false);
   };
 
-  const startDictation = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Dictation is not supported in this browser.");
-      return;
-    }
+  const handleAddComment = (text: string) => {
+    if (!currentUser || !text.trim() || !selectedProjectId) return;
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'bn-BD';
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(transcript);
-    };
-    recognition.start();
-  };
-
-  return (
-    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 rounded-3xl border border-indigo-100 shadow-sm space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex bg-indigo-100 p-1 rounded-xl">
-          <button 
-            onClick={() => { setActiveMode('dictator'); setInput(''); setSuggestions([]); setOracleMessages([]); }}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'dictator' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
-          >
-            Dictator
-          </button>
-          <button 
-            onClick={() => { setActiveMode('oracle'); setInput(''); setSuggestions([]); setOracleMessages([]); }}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'oracle' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
-          >
-            Oracle
-          </button>
-          <button 
-            onClick={() => { setActiveMode('scanner'); setInput(''); setSuggestions([]); setOracleMessages([]); }}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeMode === 'scanner' ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-200'}`}
-          >
-            Scanner
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <Bot size={16} className="text-indigo-600 animate-bounce" />
-          <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-widest">Bongsho AI</span>
-        </div>
-      </div>
-      
-      {activeMode === 'oracle' ? (
-        <div className="flex flex-col h-[450px] md:h-[550px] bg-white/40 backdrop-blur-md rounded-3xl border border-indigo-100/50 overflow-hidden shadow-2xl transition-all duration-500">
-           {/* Chat Header */}
-           <div className="p-4 bg-gradient-to-r from-indigo-600 to-blue-600 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 backdrop-blur-xl rounded-2xl flex items-center justify-center border border-white/30 shadow-inner">
-                  <Gavel className="text-white" size={20} />
-                </div>
-                <div>
-                   <h4 className="text-[12px] font-black uppercase tracking-widest text-white leading-tight">Land Law Oracle</h4>
-                   <div className="flex items-center gap-1.5 mt-0.5">
-                     <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]" />
-                     <span className="text-[8px] font-bold text-indigo-100/80 uppercase tracking-tighter">AI Expert Online | v3.0</span>
-                   </div>
-                </div>
-              </div>
-              <button 
-                onClick={() => setOracleMessages([])}
-                className="p-2 hover:bg-white/10 rounded-xl text-white/70 hover:text-white transition-colors"
-                title="Clear Chat"
-              >
-                <Trash2 size={14} />
-              </button>
-           </div>
-
-           {/* Chat Messages */}
-           <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar bg-slate-50/30">
-              {oracleMessages.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-                  <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center animate-pulse">
-                    <Scale className="text-indigo-600" size={32} />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-black text-indigo-900 uppercase">Expert Legal & Ancestry Advice</p>
-                    <p className="text-[9px] text-foundation-500 max-w-[200px]">জমিজমার দলীল দস্তাবেজ, বিএস খতিয়ান বা উত্তরাধিকার সংক্রান্ত প্রশ্ন করুন।</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
-                    {['দলীল কী?', 'খতিয়ান যাচাই', 'ফারায়েজ আইন', 'বংশ পরিচয়'].map(hint => (
-                      <button 
-                        key={hint}
-                        onClick={() => { setInput(hint); }}
-                        className="p-2 bg-white border border-indigo-100 rounded-xl text-[9px] font-bold text-indigo-600 hover:bg-indigo-50 transition-all text-left truncate shadow-sm"
-                      >
-                        {hint}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {oracleMessages.map((msg, idx) => (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  key={idx} 
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[85%] p-4 rounded-3xl shadow-lg text-xs leading-relaxed transition-all ${
-                    msg.role === 'user' 
-                      ? 'bg-gradient-to-tr from-indigo-600 to-blue-500 text-white rounded-tr-none shadow-indigo-200/50' 
-                      : 'bg-white/80 backdrop-blur-md text-foundation-900 rounded-tl-none border border-white/50 shadow-slate-200/50'
-                  }`}>
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {msg.attachments.map((att, i) => (
-                          <div key={i} className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/30 shadow-inner group relative">
-                            {att.mimeType.startsWith('image/') ? (
-                              <img src={att.url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-indigo-50/50">
-                                <FileText size={24} className="text-indigo-500 mb-1" />
-                                <span className="text-[8px] break-all uppercase font-black text-indigo-400">PDF Document</span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className={`max-w-none ${msg.role === 'user' ? 'text-white' : 'text-foundation-900'}`}>
-                      {msg.content}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-              
-              {isAnalyzing && (
-                <div className="flex justify-start">
-                  <div className="bg-white/70 backdrop-blur-sm border border-indigo-100 p-3 rounded-2xl rounded-tl-none flex items-center gap-2 shadow-sm">
-                    <div className="flex gap-1">
-                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" />
-                    </div>
-                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Oracle Thinking...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-           </div>
-
-           {/* Message Input */}
-           <div className="p-3 bg-white/80 backdrop-blur-xl border-t border-indigo-100/50">
-              {chatAttachments.length > 0 && (
-                <div className="flex gap-2 mb-3 pb-2 border-b border-indigo-50 overflow-x-auto">
-                  {chatAttachments.map((att, i) => (
-                    <div key={i} className="relative group shrink-0">
-                      <div className="w-14 h-14 rounded-xl border border-indigo-100 overflow-hidden bg-indigo-50 flex items-center justify-center">
-                        {att.file.type.startsWith('image/') ? (
-                          <img src={att.preview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <FileText size={20} className="text-indigo-400" />
-                        )}
-                      </div>
-                      <button 
-                        onClick={() => removeAttachment(i)}
-                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="relative flex items-center gap-2">
-                <input 
-                  type="file" 
-                  ref={chatFileRef} 
-                  onChange={handleChatFileSelect} 
-                  multiple 
-                  accept="image/*,application/pdf" 
-                  className="hidden" 
-                />
-                <button 
-                  onClick={() => chatFileRef.current?.click()}
-                  className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-100 transition-all border border-indigo-100/50"
-                  title="Attach File"
-                >
-                  <Paperclip size={18} />
-                </button>
-                <textarea 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleAnalze();
-                    }
-                  }}
-                  placeholder="দলীল বা আইন নিয়ে প্রশ্ন করুন..."
-                  className="w-full flex-1 bg-white border border-indigo-200 rounded-2xl p-3 text-[11px] focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[50px] max-h-[120px] pr-12 transition-all resize-none shadow-inner"
-                />
-                <button 
-                  onClick={handleAnalze}
-                  disabled={isAnalyzing || !input.trim()}
-                  className="absolute right-2 p-2 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between mt-2 px-1">
-                 <button 
-                   onClick={startDictation}
-                   className={`flex items-center gap-1.5 p-1 px-2 rounded-lg transition-all ${isListening ? 'bg-red-50 text-red-600' : 'text-indigo-400 hover:text-indigo-600'}`}
-                 >
-                   <Mic size={12} className={isListening ? 'animate-pulse' : ''} />
-                   <span className="text-[8px] font-black uppercase tracking-tighter">{isListening ? 'Listening...' : 'Voice Input'}</span>
-                 </button>
-                 <p className="text-[8px] text-foundation-400 font-bold uppercase tracking-widest">2026 AI Bongsho Intelligence</p>
-              </div>
-           </div>
-        </div>
-      ) : activeMode !== 'scanner' ? (
-        <div className="relative">
-          <textarea 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={activeMode === 'dictator' ? "Dictate: 'Arfin is the son of Monir Ahmed'..." : "Ask: 'Who is the father of Arfin?'..."}
-            className="w-full bg-white/80 border border-indigo-200 rounded-2xl p-3 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[80px] pr-20"
-          />
-          <div className="absolute right-2 bottom-2 flex gap-1">
-            <button 
-              onClick={startDictation}
-              className={`p-2 rounded-xl transition-all shadow-sm ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-100'}`}
-            >
-              <Mic size={14} />
-            </button>
-            <button 
-              onClick={handleAnalze}
-              disabled={isAnalyzing || !input.trim()}
-              className="p-2 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all disabled:opacity-50"
-            >
-              {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50 transition-colors relative overflow-hidden">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImageUpload} 
-              accept="image/*,application/pdf" 
-              multiple
-              className="hidden" 
-            />
-            
-            {isCameraActive ? (
-              <div className="w-full relative bg-black rounded-xl overflow-hidden aspect-video">
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
-                  className="w-full h-full object-cover"
-                />
-                <canvas ref={canvasRef} className="hidden" />
-                <div className="absolute inset-0 border-2 border-white/30 pointer-events-none flex items-center justify-center">
-                   <div className="w-48 h-48 border-2 border-dashed border-indigo-400 rounded-lg" />
-                </div>
-                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 px-4">
-                   <button 
-                     onClick={stopCamera}
-                     className="px-4 py-2 bg-foundation-900/80 text-white rounded-xl text-[10px] font-black uppercase tracking-widest backdrop-blur-md"
-                   >
-                     Cancel
-                   </button>
-                   <button 
-                     onClick={captureFrame}
-                     className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center gap-2"
-                   >
-                     <Zap size={12} fill="white" /> Capture & Scan
-                   </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="flex gap-4 mb-4">
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isAnalyzing}
-                    className="flex flex-col items-center gap-2 group"
-                  >
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-indigo-100 group-hover:scale-110 group-hover:border-indigo-400 transition-all">
-                       <FileText className="text-indigo-600" size={24} />
-                    </div>
-                    <span className="text-[10px] font-black uppercase text-indigo-600">Upload PDF/Img</span>
-                  </button>
-                  <button 
-                    onClick={startCamera}
-                    disabled={isAnalyzing}
-                    className="flex flex-col items-center gap-2 group"
-                  >
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-indigo-100 group-hover:scale-110 group-hover:border-indigo-400 transition-all">
-                       <Camera className="text-indigo-600" size={24} />
-                    </div>
-                    <span className="text-[10px] font-black uppercase text-indigo-600">Live Scan</span>
-                  </button>
-                </div>
-                
-                <p className="text-[10px] font-bold text-indigo-600 uppercase mb-4 text-center">
-                  Scan NID, Birth Certificate, PDF Passport<br/>
-                  or Hand-written Charts
-                </p>
-
-                {isAnalyzing && (
-                  <div className="flex items-center gap-3 px-6 py-3 bg-indigo-600 text-white rounded-2xl shadow-xl animate-pulse">
-                    <Loader2 size={16} className="animate-spin" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">AI Analysis in Progress...</span>
-                  </div>
-                )}
-              </>
-            )}
-            
-            <p className="text-[8px] text-foundation-400 mt-4 uppercase text-center font-bold tracking-widest">Connect with your Root instantly using Multiple Docs</p>
-          </div>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {suggestions.length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-4 rounded-2xl border border-indigo-200 shadow-sm space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100">
-                  <Brain size={20} className="text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">AI Extraction Result</p>
-                  <p className="text-xs font-bold text-foundation-900">
-                    {activeMode === 'scanner' ? (
-                       `${suggestions.length} Document${suggestions.length > 1 ? 's' : ''} Scanned`
-                    ) : (
-                      suggestions[0].childName ? `${suggestions[0].childName} is son of ${suggestions[0].fatherName}` : 'Suggestion Found'
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {activeMode === 'scanner' && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Show Merged Data Preview */}
-                  <div className="col-span-full bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
-                    <p className="text-[9px] font-black text-indigo-600 uppercase mb-3 flex items-center gap-2">
-                       <Sparkles size={12} /> Merged Profile Preview
-                    </p>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div>
-                         <p className="text-[8px] font-black text-foundation-400 uppercase">Self</p>
-                         <p className="text-xs font-bold text-foundation-900">{mergeSuggestions(suggestions).subject?.name || 'N/A'}</p>
-                       </div>
-                       <div>
-                         <p className="text-[8px] font-black text-foundation-400 uppercase">Father</p>
-                         <p className="text-xs font-bold text-foundation-900">{mergeSuggestions(suggestions).father?.name || 'N/A'}</p>
-                       </div>
-                    </div>
-                  </div>
-
-                  {suggestions.map((s, idx) => (
-                    <div key={idx} className="p-3 bg-foundation-50 rounded-xl border border-foundation-100 relative group">
-                      <div className="absolute -top-2 -right-2 w-5 h-5 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold">
-                        {idx + 1}
-                      </div>
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Doc {idx + 1} Snippet</p>
-                      <p className="text-[10px] font-bold truncate">{s.subject?.name || 'N/A'}</p>
-                      <p className="text-[9px] text-foundation-500 truncate">{s.father?.name || 'Father N/A'}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {mergeSuggestions(suggestions).nidNumber && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Extracted ID</p>
-                      <p className="text-xs font-bold truncate">{mergeSuggestions(suggestions).nidNumber}</p>
-                    </div>
-                  )}
-                  {mergeSuggestions(suggestions).village && (
-                    <div className="p-3 bg-foundation-50 rounded-xl border border-foundation-100">
-                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Village/Hous</p>
-                      <p className="text-[10px] font-bold truncate">{mergeSuggestions(suggestions).village}, {mergeSuggestions(suggestions).house || 'N/A'}</p>
-                    </div>
-                  )}
-                </div>
-
-                <button 
-                  onClick={() => {
-                    const merged = mergeSuggestions(suggestions);
-                    onResult(merged.subject?.name || '', merged.father?.name || '', merged);
-                  }}
-                  className="w-full bg-indigo-600 text-white rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                >
-                  <Scan size={14} /> Continue with Registration
-                </button>
-
-                {dbMatches.length > 0 && (
-                  <div className="pt-2 border-t border-indigo-50">
-                    <div className="flex items-center gap-2 mb-3">
-                       <GitBranch size={14} className="text-emerald-500" />
-                       <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Database Connections Found</p>
-                    </div>
-                    <div className="space-y-2">
-                       {dbMatches.map((match, idx) => (
-                         <div key={idx} className="flex items-center justify-between p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
-                           <div className="flex items-center gap-3">
-                             <img src={match.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${match.displayName}`} className="w-8 h-8 rounded-full" alt="" />
-                             <div>
-                               <p className="text-xs font-bold text-foundation-900">{match.displayName}</p>
-                               <p className={`text-[9px] uppercase font-black ${match.matchType === 'sibling' ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                 {match.matchType === 'sibling' ? 'Possible Sibling (সহোদর)' : `Matched as ${match.matchType}`}
-                               </p>
-                             </div>
-                           </div>
-                           <button 
-                             onClick={() => {
-                               const merged = mergeSuggestions(suggestions);
-                               if (match.matchType === 'father') {
-                                 onResult(merged.subject?.name || '', match.displayName, merged);
-                               } else if (match.matchType === 'sibling') {
-                                 if (match.fatherName) {
-                                   onResult(merged.subject?.name || '', match.fatherName, merged);
-                                 }
-                               } else {
-                                 onResult(merged.father?.name || '', match.displayName, merged);
-                               }
-                             }}
-                             className={`px-4 py-1.5 rounded-lg text-[9px] font-bold transition-all shadow-md ${match.matchType === 'sibling' ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
-                           >
-                             {match.matchType === 'sibling' ? 'Connect Sibling' : 'Root Connect'}
-                           </button>
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-                )}
-                
-                {suggestions[0]?.summary && (
-                  <div className="p-2 bg-indigo-50 rounded-xl border border-indigo-100 italic text-[9px] text-indigo-700">
-                    AI Note: {suggestions[0].summary}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {activeMode !== 'scanner' && (
-              <>
-                <div className="flex items-center justify-between">
-                  {suggestions[0]?.childName && suggestions[0]?.fatherName && (
-                    <button 
-                      onClick={() => onResult(suggestions[0].childName, suggestions[0].fatherName)}
-                      className="w-full bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
-                    >
-                      Connect Father-Son
-                    </button>
-                  )}
-                </div>
-                {suggestions[0]?.lineage && (
-                  <div className="space-y-3 relative">
-                    <div className="absolute left-[15px] top-4 bottom-4 w-0.5 bg-indigo-100 border-l border-dashed border-indigo-300" />
-                    {suggestions[0].lineage.map((item: any, idx: number) => (
-                      <motion.div 
-                        key={idx}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.1 }}
-                        className="flex items-center gap-4 relative"
-                      >
-                        <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center z-10 text-[10px] font-black ${idx === 0 ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-200 text-indigo-600'}`}>
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1 bg-foundation-50/50 p-2 rounded-xl border border-foundation-100 flex items-center justify-between">
-                          <div>
-                            <p className="text-[7px] font-black text-indigo-400 uppercase tracking-widest">{item.role}</p>
-                            <p className="text-[11px] font-bold text-foundation-900">{item.name} {item.nameBengali && <span className="text-foundation-400 font-normal">({item.nameBengali})</span>}</p>
-                          </div>
-                          {idx < suggestions[0].lineage.length - 1 && (
-                            <button 
-                              onClick={() => {
-                                const merged = mergeSuggestions(suggestions);
-                                onResult(item.name, suggestions[0].lineage[idx + 1].name, merged);
-                              }}
-                              className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-lg text-[8px] font-black uppercase transition-all shadow-sm border border-indigo-100"
-                            >
-                              Link Father
-                            </button>
-                          )}
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            
-            {activeMode !== 'scanner' && suggestions[0]?.grandfatherName && (
-              <div className="flex items-center gap-2 pt-2 border-t border-indigo-50">
-                <GitBranch size={10} className="text-amber-500" />
-                <p className="text-[9px] font-bold text-foundation-500 uppercase">
-                  Grandfather: <span className="text-amber-600">{suggestions[0].grandfatherName}</span>
-                </p>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function D3FamilyTree({ data }: { data: any[] }) {
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  useEffect(() => {
-    if (!svgRef.current || !data.length) return;
-
-    // Clear previous
-    d3.select(svgRef.current).selectAll("*").remove();
-
-    const width = 800;
-    const height = 400;
-    const margin = { top: 40, right: 90, bottom: 40, left: 90 };
-
-    const svg = d3.select(svgRef.current)
-      .attr("viewBox", `0 0 ${width} ${height}`)
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    const buildHierarchy = (nodes: any[]) => {
-      if (!nodes.length) return null;
-      let rootNode = { ...nodes[0], children: [] as any[] };
-      let current = rootNode;
-      for (let i = 1; i < nodes.length; i++) {
-        const next = { ...nodes[i], children: [] as any[] };
-        current.children.push(next);
-        current = next;
-      }
-      return rootNode;
+    const newComment: CommunityComment = {
+      id: 'comm-' + Date.now(),
+      userName: currentUser.name,
+      userAvatar: currentUser.avatar,
+      text: text.trim(),
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      email: currentUser.email
     };
 
-    const rootData = buildHierarchy([...data].reverse());
-    if (!rootData) return;
+    setProjectComments(prev => ({
+      ...prev,
+      [selectedProjectId]: [...(prev[selectedProjectId] || []), newComment]
+    }));
 
-    const root = d3.hierarchy(rootData);
-    const treeLayout = d3.tree().size([height - margin.top - margin.bottom, width - margin.left - margin.right]);
-    treeLayout(root);
-
-    svg.selectAll(".link")
-      .data(root.links())
-      .enter()
-      .append("path")
-      .attr("fill", "none")
-      .attr("stroke", "#6366f1")
-      .attr("stroke-width", 3)
-      .attr("stroke-dasharray", "5,5")
-      .attr("d", d3.linkHorizontal()
-        .x((d: any) => d.y)
-        .y((d: any) => d.x) as any);
-
-    const node = svg.selectAll(".node")
-      .data(root.descendants())
-      .enter()
-      .append("g")
-      .attr("transform", (d: any) => `translate(${d.y},${d.x})`);
-
-    node.append("circle")
-      .attr("r", 20)
-      .attr("fill", (d, i) => d.depth === 0 ? "#1e293b" : "#6366f1")
-      .attr("stroke", "white")
-      .attr("stroke-width", 3);
-
-    node.append("text")
-      .attr("dy", "-1.5em")
-      .attr("text-anchor", "middle")
-      .text((d: any) => d.data.displayName)
-      .attr("font-size", "12px")
-      .attr("font-weight", "800")
-      .attr("fill", "#1e293b");
-
-    node.append("text")
-      .attr("dy", "2.5em")
-      .attr("text-anchor", "middle")
-      .text((d: any) => d.depth === root.height ? "Root" : `Generation ${root.height - d.depth}`)
-      .attr("font-size", "9px")
-      .attr("font-weight", "bold")
-      .attr("fill", "#64748b")
-      .attr("class", "uppercase tracking-tighter");
-
-  }, [data]);
-
-  return (
-    <div className="w-full h-[400px] bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 overflow-auto scrollbar-hide flex items-center justify-center">
-      <svg ref={svgRef} className="w-full md:min-w-[800px] h-full"></svg>
-    </div>
-  );
-}
-
-function FamilyTree({ profile }: { profile: UserProfile | null }) {
-  const isAdmin = profile?.role === 'admin';
-  const [search, setSearch] = useState('');
-  const [results, setResults] = useState<UserProfile[]>([]);
-  const [selectedMember, setSelectedMember] = useState<UserProfile | null>(profile);
-  const [ancestry, setAncestry] = useState<UserProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [aiExplanation, setAiExplanation] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
-
-  useEffect(() => {
-    if (search.length > 1) {
-      const q = query(collection(db, 'users'), where('isApproved', '==', true));
-      const unsub = onSnapshot(q, (snap) => {
-        const found = snap.docs
-          .map(d => d.data() as UserProfile)
-          .filter(u => u.displayName.toLowerCase().includes(search.toLowerCase()));
-        setResults(found);
-      });
-      return () => unsub();
-    } else {
-      setResults([]);
-    }
-  }, [search]);
-
-  useEffect(() => {
-    if (!selectedMember) return;
-    
-    const fetchAncestry = async () => {
-      setIsLoading(true);
-      let current = selectedMember;
-      const path = [current];
-      
-      for (let i = 0; i < 15; i++) {
-        if (!current.fatherId) break;
-        const snap = await getDoc(doc(db, 'users', current.fatherId));
-        if (snap.exists()) {
-          const father = snap.data() as UserProfile;
-          path.push(father);
-          current = father;
-        } else break;
-      }
-      setAncestry(path);
-      setIsLoading(false);
-      
-      setIsAiLoading(true);
-      try {
-        const explanation = await explainFamilyTree(path, selectedMember.displayName, [], isAdmin);
-        setAiExplanation(explanation || 'দুঃখিত, এই মুহূর্তে বংশ পরিচয় বিশ্লেষণ সম্ভব হয়নি।');
-      } catch (err) {
-        setAiExplanation('ত্রুটি ঘটেছে। আবার চেষ্টা করুন।');
-      }
-      setIsAiLoading(false);
-    };
-
-    fetchAncestry();
-  }, [selectedMember]);
-
-  return (
-    <div className="space-y-8">
-      {/* Hero Search Section */}
-      <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-8 sm:p-12 rounded-[3rem] text-center relative overflow-hidden shadow-2xl border border-white/5">
-        <div className="absolute top-0 right-0 p-8 opacity-10 blur-2xl bg-indigo-500 rounded-full w-64 h-64 -mr-32 -mt-32"></div>
-        <div className="relative z-10 space-y-4">
-          <h3 className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tight">Interactive Lineage Visualizer</h3>
-          <p className="text-indigo-200 text-sm max-w-lg mx-auto leading-relaxed">
-            নাম লিখে সার্চ করুন এবং তাৎক্ষণিকভাবে আপনার বংশের ইতিহাস ও সম্পর্কের বিশ্লেষণ দেখুন।
-          </p>
-          
-          <div className="max-w-xl mx-auto mt-8 relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-indigo-400" />
-            </div>
-            <input
-              type="text"
-              className="block w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-white placeholder-indigo-300/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
-              placeholder="সদস্যের নাম দিয়ে সার্চ করুন..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            
-            <AnimatePresence>
-              {results.length > 0 && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                  className="absolute top-full left-0 right-0 mt-3 bg-white rounded-2xl overflow-hidden shadow-2xl z-50 divide-y divide-slate-100 max-h-64 overflow-y-auto"
-                >
-                  {results.map(member => (
-                    <button
-                      key={member.uid}
-                      onClick={() => {
-                        setSelectedMember(member);
-                        setSearch('');
-                        setResults([]);
-                      }}
-                      className="w-full text-left px-5 py-4 hover:bg-slate-50 transition-colors flex items-center justify-between group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="relative">
-                          <img 
-                            src={member.photoURL || `https://ui-avatars.com/api/?name=${member.displayName}`} 
-                            className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-100 group-hover:ring-indigo-100 transition-all" 
-                            alt="" 
-                          />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{member.displayName}</p>
-                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Father: {member.fatherName}</p>
-                        </div>
-                      </div>
-                      <ArrowRight size={18} className="text-slate-300 group-hover:text-indigo-600 transition-colors group-hover:translate-x-1 duration-300" />
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-
-      {selectedMember && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-8"
-        >
-          {/* Main Visualization Card */}
-          <div className="bg-white p-8 sm:p-10 rounded-[3rem] border border-slate-200 shadow-xl shadow-slate-100 relative overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10 pb-8 border-b border-slate-100">
-              <div className="flex items-center gap-6">
-                <div className="relative">
-                  <img 
-                    src={selectedMember.photoURL || `https://ui-avatars.com/api/?name=${selectedMember.displayName}`} 
-                    className="w-20 h-20 rounded-3xl object-cover shadow-lg border-2 border-white" 
-                    alt="" 
-                  />
-                  <div className="absolute -bottom-2 -right-2 bg-indigo-600 text-white p-2 rounded-xl shadow-xl border-2 border-white">
-                    <Fingerprint size={16} />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-2xl font-display font-bold text-slate-900 tracking-tight">{selectedMember.displayName}</h4>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span> 
-                    Root Member Profile
-                  </p>
-                </div>
-              </div>
-              
-              <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
-                  <GitBranch size={24} />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Generations</p>
-                  <p className="text-xl font-display font-bold text-slate-900 leading-tight">{ancestry.length} Traceable</p>
-                </div>
-              </div>
-            </div>
-
-            {isLoading ? (
-              <div className="h-[400px] flex items-center justify-center bg-slate-50/50 rounded-[2rem] border-2 border-dashed border-slate-200">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="relative">
-                    <div className="w-12 h-12 border-4 border-indigo-600/30 rounded-full" />
-                    <div className="absolute inset-0 w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                  <p className="text-sm text-slate-400 font-bold uppercase tracking-[0.2em] animate-pulse">Building Tree</p>
-                </div>
-              </div>
-            ) : (
-              <D3FamilyTree data={ancestry} />
-            )}
-          </div>
-
-          {/* AI Analysis Card */}
-          <div className="bg-indigo-900 rounded-[3.5rem] p-4 shadow-2xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2"></div>
-             <div className="bg-white rounded-[2.5rem] p-10 relative z-10 border border-white/20">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-200">
-                    <Sparkles size={28} className="animate-pulse" />
-                  </div>
-                  <div>
-                    <h4 className="text-2xl font-display font-bold text-slate-900">বংশালিপি বিশ্লেষণ (AI)</h4>
-                    <p className="text-xs text-slate-400 font-medium italic">Powered by Gemini Intelligent Genealogy Engine</p>
-                  </div>
-                </div>
-
-                <div className="relative">
-                  <div className="absolute left-0 top-0 w-1 h-full bg-slate-100 rounded-full"></div>
-                  <div className="pl-8">
-                    {isAiLoading ? (
-                      <div className="space-y-6">
-                        <div className="h-6 bg-slate-100 rounded-xl animate-pulse w-3/4" />
-                        <div className="h-6 bg-slate-100 rounded-xl animate-pulse w-full" />
-                        <div className="h-6 bg-slate-100 rounded-xl animate-pulse w-2/3" />
-                      </div>
-                    ) : (
-                      <div className="text-slate-700 text-lg leading-[1.8] space-y-6 font-medium">
-                        <p className="whitespace-pre-line bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent">
-                          {aiExplanation}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-             </div>
-          </div>
-        </motion.div>
-      )}
-    </div>
-  );
-}
-
-function NotificationDropdown({ notifications, onClose }: { notifications: Notification[], onClose: () => void }) {
-  const markAsRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'notifications', id), { read: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `notifications/${id}`);
-    }
+    confetti({
+      particleCount: 30,
+      spread: 25,
+      colors: ['#34d399', '#10b981']
+    });
   };
 
-  const deleteNotif = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'notifications', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `notifications/${id}`);
-    }
-  };
+  // Action: Upload Document/Image Handler (Base64 converter)
+  const processUploadedFiles = (fileList: FileList) => {
+    if (!selectedProject) return;
 
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-      className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-foundation-300 overflow-hidden z-50 overflow-y-auto max-h-[400px]"
-    >
-      <div className="p-4 border-b border-foundation-200 flex justify-between items-center bg-foundation-900 text-white">
-        <h4 className="text-xs font-bold uppercase tracking-widest">Notifications</h4>
-        <button onClick={onClose}><X size={14} /></button>
-      </div>
-
-      <div className="divide-y divide-foundation-200">
-        {notifications.length === 0 ? (
-          <div className="p-8 text-center text-foundation-500 text-xs italic">No new notifications</div>
-        ) : (
-          notifications.map(n => (
-            <div key={n.id} className={`p-4 hover:bg-foundation-200 transition-colors ${n.read ? 'opacity-60' : ''}`}>
-              <div className="flex gap-3">
-                <img src={n.userPhotoURL || undefined} className="w-8 h-8 rounded-full" alt="" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-foundation-900 line-clamp-2">{n.message}</p>
-                  <p className="text-[9px] text-foundation-500 mt-1">
-                    {n.createdAt?.toDate ? format(n.createdAt.toDate(), 'PPP p') : 'Just now'}
-                  </p>
-                </div>
-              </div>
-              <div className="mt-3 flex justify-end gap-2">
-                {!n.read && (
-                  <button 
-                    onClick={() => markAsRead(n.id)}
-                    className="text-[9px] font-bold text-foundation-700 hover:underline uppercase"
-                  >
-                    Mark read
-                  </button>
-                )}
-                <button 
-                  onClick={() => deleteNotif(n.id)}
-                  className="text-[9px] font-bold text-red-600 hover:underline uppercase"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-function ProjectProgressUpdater({ post }: { post: Post }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [progress, setProgress] = useState(post.projectProgress || 0);
-  const [status, setStatus] = useState(post.projectStatusUpdate || '');
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  const handleUpdate = async () => {
-    setIsUpdating(true);
-    try {
-      await updateDoc(doc(db, 'posts', post.id), {
-        projectProgress: Number(progress),
-        projectStatusUpdate: status
-      });
-      setIsOpen(false);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `posts/${post.id}`);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  return (
-    <div className="mb-2">
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full py-1.5 border border-emerald-400 text-emerald-700 rounded text-[10px] font-bold hover:bg-emerald-100 transition-all uppercase tracking-wider"
-      >
-        {isOpen ? 'Close Updater' : 'Update Project Progress'}
-      </button>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden mt-2 space-y-3 bg-white/60 p-3 rounded-lg border border-emerald-200 shadow-inner"
-          >
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="text-[9px] font-bold text-emerald-800 uppercase tracking-tighter">Completion Percentage</label>
-                <span className="text-[10px] font-bold text-emerald-900">{progress}%</span>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={progress} 
-                onChange={e => setProgress(Number(e.target.value))}
-                className="w-full accent-emerald-600 h-1.5 bg-emerald-100 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-            
-            <div className="space-y-1">
-              <label className="text-[9px] font-bold text-emerald-800 uppercase tracking-tighter">Status Message</label>
-              <input 
-                value={status}
-                onChange={e => setStatus(e.target.value)}
-                placeholder="e.g. Ground floor completed, pending painting..."
-                className="w-full p-2 bg-white rounded border border-emerald-200 text-[10px] focus:ring-1 focus:ring-emerald-500 outline-none"
-              />
-            </div>
-
-            <button 
-              onClick={handleUpdate}
-              disabled={isUpdating}
-              className="w-full py-1.5 bg-emerald-800 text-white rounded text-[10px] font-bold hover:bg-emerald-900 transition-all flex items-center justify-center gap-2"
-            >
-              {isUpdating ? 'Updating...' : 'Publish Progress Update'}
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function ProjectContributionPanel({ post, profile, contributions, isAdmin }: { post: Post, profile: UserProfile | null, contributions: Contribution[], isAdmin: boolean }) {
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<'bkash' | 'nagad' | 'bank' | 'cash'>('bkash');
-  const [transactionId, setTransactionId] = useState('');
-  const [isPublic, setIsPublic] = useState(profile?.isPublicContribution ?? true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (profile) setIsPublic(profile.isPublicContribution ?? true);
-  }, [profile]);
-
-  const totalRaised = contributions
-    .filter(c => c.status === 'approved')
-    .reduce((sum, c) => sum + c.amount, 0);
-
-  const approvedContributions = contributions.filter(c => c.status === 'approved');
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!profile || !amount || !transactionId) return;
-
-    setIsSubmitting(true);
-    try {
-      await addDoc(collection(db, 'posts', post.id, 'contributions'), {
-        postId: post.id,
-        userId: profile.uid,
-        userName: profile.displayName,
-        userPhotoURL: profile.photoURL || '',
-        amount: Number(amount),
-        method,
-        transactionId,
-        status: 'pending',
-        isPublic: isPublic,
-        createdAt: serverTimestamp()
-      });
-      setAmount('');
-      setTransactionId('');
-      alert('Your contribution record has been submitted for admin verification. Thank you!');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `posts/${post.id}/contributions`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const approveContribution = async (contribId: string) => {
-    if (!isAdmin) return;
-    try {
-      await updateDoc(doc(db, 'posts', post.id, 'contributions', contribId), { status: 'approved' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `posts/${post.id}/contributions/${contribId}`);
-    }
-  };
-
-  return (
-    <motion.div 
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      className="mt-4 bg-white/80 rounded-xl border border-emerald-200 overflow-hidden"
-    >
-      <div className="p-4 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center">
-        <div>
-          <h4 className="text-sm font-bold text-emerald-900">Project Fund Tracking</h4>
-          <p className="text-[10px] text-emerald-600 font-mono">Total Approved: {totalRaised.toLocaleString()} / {post.projectBudget?.toLocaleString()} BDT</p>
-        </div>
-        <div className="text-right">
-          <div className="w-24 bg-emerald-200 h-2 rounded-full overflow-hidden">
-            <div 
-              className="bg-emerald-600 h-full transition-all duration-1000" 
-              style={{ width: `${Math.min(100, (totalRaised / (post.projectBudget || 1)) * 100)}%` }}
-            />
-          </div>
-          <p className="text-[9px] text-emerald-700 font-bold mt-1">
-            {Math.round((totalRaised / (post.projectBudget || 1)) * 100)}% Funded
-          </p>
-        </div>
-      </div>
-
-      <div className="p-4 space-y-6">
-        {/* Contribution Form */}
-        <form onSubmit={handleSubmit} className="space-y-3 bg-emerald-100/30 p-3 rounded-lg border border-emerald-200">
-          <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider mb-2">Record Payment</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[9px] font-bold text-emerald-700">Amount (BDT)</label>
-              <input 
-                type="number"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="500"
-                className="w-full p-2 bg-white rounded border border-emerald-200 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-bold text-emerald-700">Method</label>
-              <select 
-                value={method}
-                onChange={e => setMethod(e.target.value as any)}
-                className="w-full p-2 bg-white rounded border border-emerald-200 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
-              >
-                <option value="bkash">Bkash</option>
-                <option value="nagad">Nagad</option>
-                <option value="bank">Bank</option>
-                <option value="cash">Cash</option>
-              </select>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[9px] font-bold text-emerald-700">TrxID / Reference</label>
-            <input 
-              value={transactionId}
-              onChange={e => setTransactionId(e.target.value)}
-              placeholder="Enter Transaction ID or Reference"
-              className="w-full p-2 bg-white rounded border border-emerald-200 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
-              required
-            />
-          </div>
-          <div className="flex items-center gap-2 px-1">
-            <input 
-              type="checkbox"
-              id="isPublic"
-              checked={isPublic}
-              onChange={e => setIsPublic(e.target.checked)}
-              className="w-3 h-3 rounded text-emerald-600 focus:ring-emerald-500"
-            />
-            <label htmlFor="isPublic" className="text-[9px] text-emerald-700 font-bold uppercase tracking-tighter cursor-pointer">
-              Show my name publicly in the list
-            </label>
-          </div>
-          <button 
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-2 bg-emerald-600 text-white rounded font-bold text-[10px] hover:bg-emerald-700 transition-all disabled:opacity-50"
-          >
-            {isSubmitting ? 'Submitting...' : 'Submit Contribution Proof'}
-          </button>
-        </form>
-
-        {/* Contributors List */}
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-[0.2em] mb-3">Verified Donors List</p>
-            <div className="max-h-48 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-              {approvedContributions.length === 0 && <p className="text-center text-[10px] text-foundation-400 py-4 italic">No verified contributions yet.</p>}
-              {approvedContributions.map(c => (
-                <div key={c.id} className="bg-emerald-50/50 p-3 rounded border border-emerald-100 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 border border-emerald-200">
-                      {c.isPublic ? <img src={c.userPhotoURL || undefined} className="w-full h-full rounded-full" alt="" /> : <Users size={14} />}
-                    </div>
-                    <div>
-                      <h5 className="text-[10px] font-bold text-foundation-900">{c.isPublic ? c.userName : 'Anonymous Member'}</h5>
-                      <p className="text-[9px] text-foundation-500">
-                        {c.createdAt?.toDate ? format(c.createdAt.toDate(), 'PPP') : 'Recently'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-emerald-700">{c.amount.toLocaleString()} BDT</p>
-                    <CheckCircle2 size={10} className="text-emerald-500 ml-auto" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2 pt-4 border-t border-foundation-100">
-            <p className="text-[10px] font-bold text-foundation-500 uppercase tracking-[0.2em] mb-3">All Records (incl. Pending)</p>
-            <div className="max-h-64 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-              {contributions.length === 0 && <p className="text-center text-[10px] text-foundation-400 py-4 italic">No contributions recorded yet.</p>}
-              {contributions.map(c => (
-              <div key={c.id} className="bg-white p-3 rounded-lg border border-foundation-200 flex items-center justify-between group shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="w-8 h-8 rounded-full bg-foundation-100 flex items-center justify-center text-foundation-400 border border-foundation-200 overflow-hidden">
-                      {(c.isPublic || isAdmin) ? (
-                        <img src={c.userPhotoURL || undefined} className="w-full h-full rounded-full" alt="" />
-                      ) : (
-                        <Users size={14} />
-                      )}
-                    </div>
-                    {c.status === 'approved' ? (
-                      <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
-                        <CheckCircle2 size={12} className="text-emerald-600" />
-                      </div>
-                    ) : (
-                      <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
-                        <Clock size={12} className="text-amber-500" />
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h5 className="text-[10px] font-bold text-foundation-900">
-                        {(c.isPublic || isAdmin) ? c.userName : 'Anonymous Member'}
-                      </h5>
-                      <span className={`text-[8px] px-1.5 py-0.5 rounded-full uppercase font-bold tracking-tighter ${c.method === 'bkash' ? 'bg-pink-100 text-pink-700' : c.method === 'nagad' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {c.method}
-                      </span>
-                    </div>
-                    <p className="text-[9px] text-foundation-500">
-                      {c.amount.toLocaleString()} BDT • {c.createdAt?.toDate ? format(c.createdAt.toDate(), 'MMM d, p') : 'Just now'}
-                    </p>
-                    <p className="text-[8px] text-foundation-400 font-mono mt-0.5">Ref: {c.transactionId}</p>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  {c.status === 'pending' && isAdmin ? (
-                    <button 
-                      onClick={() => approveContribution(c.id)}
-                      className="text-[9px] font-bold bg-foundation-900 text-white px-3 py-1 rounded hover:bg-emerald-600 transition-colors"
-                    >
-                      Approve
-                    </button>
-                  ) : (
-                    <span className={`text-[9px] font-bold ${c.status === 'approved' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                      {c.status === 'approved' ? 'Verified' : 'Pending'}
-                    </span>
-                  )}
-                  <ExternalLink size={10} className="text-foundation-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-    </motion.div>
-  );
-}
-
-function CheckoutGateway({ post, profile, onClose }: { post: Post, profile: UserProfile | null, onClose: () => void }) {
-  const [step, setStep] = useState<'amount' | 'method' | 'transaction' | 'process' | 'success'>('amount');
-  const [amount, setAmount] = useState('500');
-  const [method, setMethod] = useState<'bkash' | 'nagad' | 'bank' | 'cash'>('bkash');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [trxId, setTrxId] = useState('');
-
-  const handlePay = async () => {
-    if (!trxId.trim()) {
-      alert('Please enter a Transaction ID or Reference');
-      return;
-    }
-    setStep('process');
-    setIsProcessing(true);
-    
-    // Simulate a brief verification/processing delay
-    setTimeout(async () => {
-      try {
-        if (!profile) return;
-        await addDoc(collection(db, 'posts', post.id, 'contributions'), {
-          postId: post.id,
-          userId: profile.uid,
-          userName: profile.displayName,
-          userPhotoURL: profile.photoURL || '',
-          amount: Number(amount),
-          method,
-          transactionId: trxId,
-          status: 'pending',
-          isPublic: profile.isPublicContribution ?? true,
-          createdAt: serverTimestamp()
-        });
-        setStep('success');
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `posts/${post.id}/contributions`);
-        onClose();
-      } finally {
-        setIsProcessing(false);
-      }
-    }, 1500);
-  };
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm"
-    >
-      <motion.div 
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden"
-      >
-        {/* Header */}
-        <div className="bg-emerald-600 p-6 text-white text-center relative">
-          <button onClick={onClose} className="absolute left-6 top-6 text-white/80 hover:text-white">
-            <ArrowLeft size={20} />
-          </button>
-          <div className="flex justify-center mb-4">
-            <DollarSign size={40} className="text-emerald-200" />
-          </div>
-          <h2 className="text-lg font-bold">Foundation Contribution</h2>
-          <p className="text-[10px] text-emerald-100 uppercase tracking-widest font-mono mt-1">Manual Verification Required</p>
-        </div>
-
-        <div className="p-6">
-          {step === 'amount' && (
-            <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-6">
-              <div className="text-center">
-                <p className="text-xs text-foundation-500 mb-1">Enter Contribution Amount</p>
-                <div className="flex items-center justify-center gap-2">
-                  <span className="text-3xl font-bold text-foundation-900">৳</span>
-                  <input 
-                     type="number"
-                     value={amount}
-                     onChange={e => setAmount(e.target.value)}
-                     className="text-4xl font-bold text-foundation-900 w-32 border-none focus:ring-0 text-center bg-transparent"
-                     autoFocus
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                {['500', '1000', '2000', '5000', '10000', '25000'].map(val => (
-                  <button 
-                    key={val}
-                    onClick={() => setAmount(val)}
-                    className={`py-2 text-xs font-bold rounded-lg border transition-all ${amount === val ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-foundation-50 border-foundation-200 text-foundation-600 hover:border-emerald-400'}`}
-                  >
-                    ৳ {val}
-                  </button>
-                ))}
-              </div>
-
-              <button 
-                onClick={() => setStep('method')}
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
-              >
-                Choose Payment Method
-              </button>
-            </motion.div>
-          )}
-
-          {step === 'method' && (
-            <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-4">
-              <p className="text-xs font-bold text-foundation-500 uppercase tracking-widest text-center">Select Your Payment Channel</p>
-              
-              <div className="space-y-3">
-                {[
-                  { id: 'bkash', name: 'Bkash', color: 'bg-pink-600', icon: '৳' },
-                  { id: 'nagad', name: 'Nagad', color: 'bg-orange-600', icon: '৳' },
-                  { id: 'bank', name: 'Bank Transfer', color: 'bg-indigo-600', icon: <Smartphone size={20} /> },
-                  { id: 'cash', name: 'Cash / Other', color: 'bg-slate-700', icon: '৳' }
-                ].map(m => (
-                  <button 
-                    key={m.id}
-                    onClick={() => setMethod(m.id as any)}
-                    className={`w-full p-4 rounded-2xl border-2 flex items-center justify-between transition-all ${method === m.id ? 'border-emerald-600 bg-emerald-50' : 'border-foundation-100 hover:border-emerald-200'}`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`${m.color} text-white w-10 h-10 rounded-xl flex items-center justify-center font-bold`}>
-                        {m.icon}
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-foundation-900">{m.name}</p>
-                        <p className="text-[10px] text-foundation-400">Manual TrxID Entry</p>
-                      </div>
-                    </div>
-                    {method === m.id && <CheckCircle2 className="text-emerald-600" size={24} />}
-                  </button>
-                ))}
-              </div>
-
-              <div className="pt-4 space-y-3">
-                <button 
-                  onClick={() => setStep('transaction')}
-                  className="w-full py-4 bg-foundation-900 text-white rounded-2xl font-bold hover:bg-black transition-all flex items-center justify-center gap-2"
-                >
-                  Confirm Choice
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === 'transaction' && (
-            <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="space-y-6">
-              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 space-y-2">
-                 <p className="text-[10px] uppercase font-bold text-emerald-600">Payment Instructions</p>
-                 <p className="text-xs text-emerald-900">Please send your contribution to the foundation's official <strong>{method}</strong> account. Once done, enter the Transaction ID below.</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-foundation-500 uppercase tracking-widest">Transaction ID / Reference</label>
-                  <input 
-                    value={trxId}
-                    onChange={e => setTrxId(e.target.value)}
-                    placeholder="e.g. 9L4X2M7N"
-                    className="w-full p-4 rounded-2xl border border-foundation-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-mono"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="bg-foundation-50 p-4 rounded-2xl border border-foundation-100">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-foundation-500">Amount to declare</span>
-                    <span className="font-bold text-foundation-900">৳ {Number(amount).toLocaleString()}</span>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={handlePay}
-                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
-                >
-                  <Send size={16} />
-                  Submit Project Contribution
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === 'process' && (
-            <div className="py-12 text-center space-y-6">
-              <div className="flex justify-center">
-                <Loader2 size={60} className="text-emerald-600 animate-spin" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold text-foundation-900">Uploading Record</h3>
-                <p className="text-xs text-foundation-500">Storing your contribution for verification...</p>
-              </div>
-            </div>
-          )}
-
-          {step === 'success' && (
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="py-8 text-center space-y-6">
-              <div className="flex justify-center">
-                <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                  <CheckCircle2 size={48} />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-2xl font-bold text-foundation-900">Thank You!</h3>
-                <p className="text-sm font-medium text-emerald-600">Contribution Record Submitted</p>
-              </div>
-              <div className="bg-foundation-50 p-6 rounded-2xl border border-foundation-100 space-y-3 text-left">
-                <div className="flex justify-between border-b border-foundation-200 pb-2">
-                  <span className="text-[10px] font-bold text-foundation-400 uppercase">TrxID Reference</span>
-                  <span className="text-[10px] font-mono font-bold text-foundation-900">{trxId}</span>
-                </div>
-                <div className="flex justify-between border-b border-foundation-200 pb-2">
-                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Amount Declared</span>
-                  <span className="text-[10px] font-bold text-foundation-900">৳ {Number(amount).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[10px] font-bold text-foundation-400 uppercase">Verification Status</span>
-                  <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Pending Admin</span>
-                </div>
-              </div>
-              <button 
-                onClick={onClose}
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100"
-              >
-                Close Modal
-              </button>
-            </motion.div>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-function DirectMessageButton({ currentUser, targetUser, onStartChat }: { currentUser: UserProfile, targetUser: { uid: string, displayName: string, photoURL: string }, onStartChat: (convId: string) => void }) {
-  const [isStarting, setIsStarting] = useState(false);
-
-  const handleStartChat = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isStarting) return;
-    setIsStarting(true);
-    try {
-      const convId = currentUser.uid < targetUser.uid ? `${currentUser.uid}_${targetUser.uid}` : `${targetUser.uid}_${currentUser.uid}`;
-      const snap = await getDoc(doc(db, 'conversations', convId));
-      
-      if (!snap.exists()) {
-        await setDoc(doc(db, 'conversations', convId), {
-          participants: [currentUser.uid, targetUser.uid],
-          participantDetails: {
-            [currentUser.uid]: { displayName: currentUser.displayName, photoURL: currentUser.photoURL || '' },
-            [targetUser.uid]: { displayName: targetUser.displayName, photoURL: targetUser.photoURL || '' }
-          },
-          updatedAt: serverTimestamp()
-        });
-      }
-      onStartChat(convId);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'conversations');
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  return (
-    <button 
-      onClick={handleStartChat}
-      disabled={isStarting}
-      className="flex items-center gap-2 px-3 py-1.5 bg-foundation-100 hover:bg-indigo-600 text-foundation-700 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm active:scale-95 disabled:opacity-50 group"
-      title="Start Chat"
-    >
-      <MessageCircle size={14} className="group-hover:rotate-12 transition-transform" />
-      {isStarting ? 'Connecting...' : 'Chat'}
-    </button>
-  );
-}
-
-function Messenger({ 
-  profile, 
-  onStartCall, 
-  initialConversationId, 
-  onClearInitialConv 
-}: { 
-  profile: UserProfile | null, 
-  onStartCall: (receiverId: string, type: 'voice' | 'video') => void,
-  initialConversationId?: string | null,
-  onClearInitialConv?: () => void
-}) {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
-
-  useEffect(() => {
-    if (initialConversationId && conversations.length > 0) {
-      const conv = conversations.find(c => c.id === initialConversationId);
-      if (conv) {
-        setSelectedConv(conv);
-        onClearInitialConv?.();
-      }
-    }
-  }, [initialConversationId, conversations, onClearInitialConv]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [showMediaMenu, setShowMediaMenu] = useState(false);
-  const [showChatSettings, setShowChatSettings] = useState(false);
-  const [showConvMenu, setShowConvMenu] = useState(false);
-  const [showNewChat, setShowNewChat] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [previewDoc, setPreviewDoc] = useState<Message | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (showNewChat && searchQuery.trim().length >= 2) {
-      const fetchSearch = async () => {
-        setIsSearching(true);
-        try {
-          const q = query(
-            collection(db, 'users'),
-            where('email', '!=', ''), // Critical: Only users with email
-            limit(50)
-          );
-          const snap = await getDocs(q);
-          const filtered = snap.docs
-            .map(d => d.data() as UserProfile)
-            .filter(u => 
-              u.uid !== profile?.uid && 
-              (u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-               u.email.toLowerCase().includes(searchQuery.toLowerCase()))
-            );
-          setSearchResults(filtered);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setIsSearching(false);
-        }
-      };
-      const timer = setTimeout(fetchSearch, 300);
-      return () => clearTimeout(timer);
-    } else {
-      setSearchResults([]);
-    }
-  }, [searchQuery, showNewChat, profile?.uid]);
-
-  const { isRecording, startRecording, stopRecording, cancelRecording, audioBlob, recordingTime } = useAudioRecorder();
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (!profile) return;
-    const q = query(
-      collection(db, 'conversations'),
-      where('participants', 'array-contains', profile.uid),
-      orderBy('updatedAt', 'desc')
-    );
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setConversations(snap.docs.map(d => ({ id: d.id, ...d.data() } as Conversation)));
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'conversations'));
-    return () => unsubscribe();
-  }, [profile]);
-
-  useEffect(() => {
-    if (!selectedConv) return;
-    const q = query(
-      collection(db, 'messages'),
-      where('conversationId', '==', selectedConv.id),
-      orderBy('createdAt', 'asc')
-    );
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
-    }, (err) => handleFirestoreError(err, OperationType.GET, `messages/${selectedConv.id}`));
-    return () => unsubscribe();
-  }, [selectedConv]);
-
-  useEffect(() => {
-    if (audioBlob && selectedConv && profile) {
+    Array.from(fileList).forEach(file => {
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        await sendMessage('audio', '[ভয়েস মেসেজ]', base64);
-      };
-      reader.readAsDataURL(audioBlob);
-    }
-  }, [audioBlob]);
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const extension = file.name.split('.').pop()?.toLowerCase() || '';
+        const fileType = ['jpg', 'jpeg', 'png', 'svg', 'webp', 'gif'].includes(extension) ? 'image' : 'document';
+        
+        const newAttachedFile: ProjectFile = {
+          id: 'file-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+          name: file.name,
+          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          type: fileType as 'image' | 'document',
+          extension,
+          uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          dataUrl
+        };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      let type: Message['type'] = 'file';
-      if (file.type.startsWith('image/')) type = 'image';
-      else if (file.type.startsWith('video/')) type = 'video';
-      else if (file.type.startsWith('audio/')) type = 'audio';
+        setProjects(prev => prev.map(p => {
+          if (p.id === selectedProjectId) {
+            const autoLog: ProjectLog = {
+              id: 'log-sys-file-' + Date.now(),
+              date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              title: `${fileType === 'image' ? 'Image Visual' : 'Document Specification'} Added`,
+              description: `Uploaded file attachment "${file.name}" to safe vault storage.`,
+              status: 'success'
+            };
+            return {
+              ...p,
+              files: [newAttachedFile, ...p.files],
+              logs: [autoLog, ...p.logs]
+            };
+          }
+          return p;
+        }));
+
+        confetti({
+          particleCount: 50,
+          spread: 40,
+          colors: ['#06b6d4', '#3b82f6']
+        });
+      };
       
-      sendMessage(type, `[${type}] ${file.name}`, reader.result as string, {
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type
-      });
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processUploadedFiles(e.dataTransfer.files);
+    }
+  };
+
+  const triggerFileSelection = () => {
+    fileInputRef.current?.click();
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processUploadedFiles(e.target.files);
+    }
+  };
+
+  // Action: Create Project
+  const handleCreateProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !newDescription.trim() || !newTargetFund.trim()) return;
+
+    const projectId = newTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    
+    // Fallback ID collision check
+    const idExists = projects.some(p => p.id === projectId);
+    const finalProjectId = idExists ? `${projectId}-${Date.now().toString().slice(-4)}` : projectId;
+
+    const addedProject: DevelopmentProject = {
+      id: finalProjectId,
+      title: newTitle,
+      category: newCategory,
+      description: newDescription,
+      details: newDetails || 'Specific operational parameters are in documentation reviews.',
+      targetFund: Number(newTargetFund),
+      raisedFund: Number(newRaisedFund) || 0,
+      progress: 0,
+      status: 'Planning',
+      location: newLocation || 'Hazi Bari Main Campus',
+      startedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      beneficiariesCount: Number(newBeneficiaries) || 500,
+      gradient: newGradient,
+      logs: [
+        {
+          id: 'log-initial',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          title: 'Project Initiated',
+          description: 'Hazi Bari Philanthropic Committee approved project charter & community metrics.',
+          status: 'success'
+        }
+      ],
+      files: [],
+      milestones: [
+        { id: 'm-new-' + Date.now() + '-1', title: 'Permit Approval & Community Board Clearing', plannedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), status: 'Completed' },
+        { id: 'm-new-' + Date.now() + '-2', title: 'Vendor Alignment and Sourcing Logistics', plannedDate: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), status: 'Pending' },
+        { id: 'm-new-' + Date.now() + '-3', title: 'Active Groundwork & Testing Phase', plannedDate: new Date(Date.now() + 75 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), status: 'Pending' }
+      ]
     };
-    reader.readAsDataURL(file);
+
+    setProjects(prev => [addedProject, ...prev]);
+    setSelectedProjectId(finalProjectId);
+    setShowCreateModal(false);
+
+    // Reset fields
+    setNewTitle('');
+    setNewDescription('');
+    setNewDetails('');
+    setNewTargetFund('');
+    setNewRaisedFund('');
+    setNewLocation('');
+    setNewBeneficiaries('');
+
+    confetti({
+      particleCount: 150,
+      spread: 80,
+      colors: ['#f59e0b', '#10b981', '#3b82f6']
+    });
   };
 
-  const sendMessage = async (type: Message['type'] = 'text', content: string = newMessage, mediaUrl?: string, extraData: Partial<Message> = {}) => {
-    if (!content.trim() && !mediaUrl) return;
-    if (!selectedConv || !profile || isSending) return;
-    setIsSending(true);
-    try {
-      const msgData = {
-        conversationId: selectedConv.id,
-        senderId: profile.uid,
-        content: content,
-        type: type,
-        mediaUrl: mediaUrl || null,
-        ...extraData,
-        createdAt: serverTimestamp()
-      };
-      await addDoc(collection(db, 'messages'), msgData);
-      await updateDoc(doc(db, 'conversations', selectedConv.id), {
-        lastMessage: type === 'text' ? content : `[${type}] ${extraData.fileName || ''}`,
-        lastMessageAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-      setNewMessage('');
-      setShowMediaMenu(false);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'messages');
-    } finally {
-      setIsSending(false);
+  const handleDeleteProject = (projId: string) => {
+    const confirmation = window.confirm("Are you absolutely sure you want to delete this developmental project from the Hazi Bari Showcase registry? All uploaded images and associated audits will be permanently removed.");
+    if (!confirmation) return;
+
+    const updated = projects.filter(p => p.id !== projId);
+    setProjects(updated);
+    if (selectedProjectId === projId && updated.length > 0) {
+      setSelectedProjectId(updated[0].id);
     }
   };
 
-  const handleUpdateMessage = async (messageId: string, data: Partial<Message>) => {
-    try {
-      await updateDoc(doc(db, 'messages', messageId), data);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `messages/${messageId}`);
-    }
+  // Helper Mock Download initiator
+  const initiateMockDownload = (file: ProjectFile) => {
+    const link = document.createElement('a');
+    link.href = file.dataUrl;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
-
-  const handleReact = async (messageId: string, emoji: string) => {
-    if (!profile) return;
-    try {
-      await updateDoc(doc(db, 'messages', messageId), {
-        [`reactions.${profile.uid}`]: emoji
-      });
-    } catch (err) {
-      console.error('Failed to react:', err);
-    }
-  };
-
-  const otherUid = selectedConv ? selectedConv.participants.find(id => id !== profile?.uid) : null;
-  const otherUser = otherUid && selectedConv ? selectedConv.participantDetails?.[otherUid] : null;
-
-  if (!profile) return null;
 
   return (
-    <div className="bg-white rounded-3xl shadow-2xl border border-foundation-200 overflow-hidden flex h-[700px] font-sans">
-      {/* Sidebar */}
-      <div className="w-80 border-r border-foundation-200 flex flex-col bg-foundation-50/30">
-        <div className="p-6 border-b border-foundation-200 bg-white flex items-center justify-between">
+    <div id="app-root" className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans select-none selection:bg-emerald-500 selection:text-white">
+      
+      {/* Dynamic Photo Lightbox */}
+      {activeLightboxImage && (
+        <div id="lightbox-container" className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
+          <button 
+            id="close-lightbox"
+            onClick={() => setActiveLightboxImage(null)}
+            className="absolute top-4 right-4 bg-slate-800 p-3 rounded-full hover:bg-slate-700 transition text-slate-300"
+          >
+            <X size={24} />
+          </button>
+          
+          <div className="max-w-4xl max-h-[80vh] overflow-hidden rounded-xl border border-slate-700/50 shadow-2xl">
+            <img 
+              id="lightbox-image"
+              src={activeLightboxImage.url} 
+              alt={activeLightboxImage.name} 
+              className="object-contain w-full h-full"
+            />
+          </div>
+          
+          <div className="mt-4 text-center">
+            <p id="lightbox-filename" className="text-sm font-semibold tracking-wide text-slate-200">{activeLightboxImage.name}</p>
+            <p className="text-xs text-slate-400 mt-1">Stored securely in modern base-64 Local Vault</p>
+          </div>
+        </div>
+      )}
+
+      {/* Top Professional Portal Header */}
+      <header id="main-header" className="border-b border-slate-800 bg-slate-950/80 sticky top-0 backdrop-blur-xl z-20 transition-all duration-300">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          
+          {/* Logo & Branding mark */}
           <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-snap-yellow rounded-xl flex items-center justify-center shadow-sm">
-                <Bot size={24} className="text-foundation-900" />
-             </div>
-             <h3 className="font-display font-black text-foundation-900 text-lg uppercase tracking-wider italic">Chats</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setShowNewChat(true)}
-              className="p-2 bg-snap-blue text-white rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all"
-              title="New Chat"
-            >
-              <Plus size={20} />
-            </button>
-            <div className="relative">
-              <button 
-                onClick={() => setShowChatSettings(!showChatSettings)}
-                className={`p-2 rounded-full transition-all ${showChatSettings ? 'bg-snap-yellow text-foundation-900 shadow-lg' : 'bg-foundation-100 hover:bg-snap-yellow'}`}
-              >
-                 <MoreHorizontal size={20} />
-              </button>
-            <AnimatePresence>
-              {showChatSettings && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setShowChatSettings(false)} />
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                    className="absolute right-0 mt-3 w-56 bg-white border border-foundation-200 rounded-2xl shadow-2xl z-30 py-3 overflow-hidden origin-top-right"
-                  >
-                    <div className="px-4 py-1 mb-2 border-b border-foundation-100 flex items-center justify-between">
-                       <span className="text-[8px] font-black uppercase tracking-[0.2em] text-foundation-400">Settings</span>
-                       <div className="w-1.5 h-1.5 bg-snap-yellow rounded-full shadow-[0_0_8px_rgba(255,252,0,0.8)]" />
-                    </div>
-                    <button className="w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 transition-all uppercase tracking-widest group">
-                       <div className="w-8 h-8 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-foundation-100 transition-colors">
-                          <Settings2 size={14} />
-                       </div>
-                       Chat Preferences
-                    </button>
-                    <button className="w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 transition-all uppercase tracking-widest group">
-                       <div className="w-8 h-8 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-foundation-100 transition-colors">
-                          <UserPlus size={14} />
-                       </div>
-                       Invite Friends
-                    </button>
-                    <div className="mx-4 my-2 border-t border-foundation-100" />
-                    <button className="w-full flex items-center gap-3 px-4 py-2.5 text-[10px] font-black text-rose-500 hover:bg-rose-50 transition-all uppercase tracking-widest group">
-                       <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center group-hover:bg-rose-100 transition-colors">
-                          <Flag size={14} />
-                       </div>
-                       Report Issue
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-        
-      <AnimatePresence>
-          {showNewChat && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="p-4 border-b border-foundation-200 bg-white space-y-4"
-            >
-              <div className="flex justify-between items-center px-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-foundation-400">New Chat with Email User</p>
-                <button onClick={() => setShowNewChat(false)}><X size={16} className="text-foundation-400" /></button>
+            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shadow-lg shadow-emerald-500/5">
+              <Building className="h-5 w-5 animate-pulse-slow" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-display font-bold text-lg tracking-tight text-white">HAZI BARI FOUNDATION</span>
+                <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Development Portal</span>
               </div>
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-foundation-400" />
-                <input 
-                  type="text" 
-                  autoFocus
-                  placeholder="Search members by email..." 
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full bg-foundation-50 rounded-xl py-2 pl-9 pr-4 text-xs focus:ring-2 focus:ring-snap-blue outline-none border border-foundation-100 font-bold"
+              <p className="text-xs text-slate-400 mt-0.5">Trust & Accountability in Communal Progress</p>
+            </div>
+          </div>
+
+          {/* Configuration Switches / Controls & Google Sign Up (নতুন ইউজার এ্যাপ) */}
+          <div className="flex items-center gap-3 self-end sm:self-auto flex-wrap sm:flex-nowrap">
+            
+            {/* Google Authentication Control */}
+            {currentUser ? (
+              <div id="user-header-profile" className="flex items-center gap-2 bg-slate-905 border border-slate-800 rounded-lg p-1 pr-2.5">
+                <img 
+                  id="user-avatar-element"
+                  src={currentUser.avatar} 
+                  alt={currentUser.name} 
+                  referrerPolicy="no-referrer"
+                  className="h-7 w-7 rounded-md border border-slate-750 object-cover" 
                 />
+                <div className="hidden md:block text-left">
+                  <p id="user-display-name" className="text-[11px] font-bold text-white leading-tight">{currentUser.name}</p>
+                  <p className="text-[9px] text-slate-400 leading-tight font-mono font-semibold">Registered Viewer</p>
+                </div>
+                <button
+                  id="logout-btn-header"
+                  onClick={handleLogout}
+                  className="ml-1.5 px-2 py-0.5 bg-slate-900 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-slate-800 rounded transition"
+                  title="Sign Out"
+                >
+                  <span className="text-[9px] uppercase font-mono tracking-wider font-extrabold">Log Out</span>
+                </button>
               </div>
-              
-              <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
-                {isSearching && (
-                  <div className="p-4 text-center">
-                    <Loader2 size={16} className="animate-spin mx-auto text-foundation-400" />
-                  </div>
-                )}
-                {!isSearching && searchQuery.length >= 2 && searchResults.length === 0 && (
-                   <p className="text-[10px] text-center text-foundation-400 py-4 uppercase font-black tracking-widest">No verified member found</p>
-                )}
-                {searchResults.map(user => (
-                   <button 
-                     key={user.uid}
-                     onClick={async () => {
-                       const convId = profile.uid < user.uid ? `${profile.uid}_${user.uid}` : `${user.uid}_${profile.uid}`;
-                       const snap = await getDoc(doc(db, 'conversations', convId));
-                       if (!snap.exists()) {
-                         await setDoc(doc(db, 'conversations', convId), {
-                           participants: [profile.uid, user.uid],
-                           participantDetails: {
-                             [profile.uid]: { displayName: profile.displayName, photoURL: profile.photoURL || '' },
-                             [user.uid]: { displayName: user.displayName, photoURL: user.photoURL || '' }
-                           },
-                           updatedAt: serverTimestamp()
-                         });
-                       }
-                       setShowNewChat(false);
-                       setSearchQuery('');
-                     }}
-                     className="w-full flex items-center gap-3 p-2 hover:bg-foundation-50 rounded-xl transition-colors text-left"
-                   >
-                     <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} className="w-8 h-8 rounded-lg object-cover" alt="" />
-                     <div className="min-w-0">
-                       <p className="text-xs font-black text-foundation-900 truncate">{user.displayName}</p>
-                       <p className="text-[9px] text-foundation-400 truncate tracking-tight">{user.email}</p>
-                     </div>
-                   </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-          {conversations.length === 0 && (
-            <div className="p-12 text-center">
-               <div className="w-16 h-16 bg-foundation-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-foundation-300 rotate-3">
-                  <Mail size={32} />
-               </div>
-               <p className="text-[10px] uppercase font-black text-foundation-400 tracking-[0.2em]">Start a connection</p>
-            </div>
-          )}
-          {conversations.map(conv => {
-            const cOtherUid = conv.participants.find(id => id !== profile.uid)!;
-            const cOtherUser = conv.participantDetails?.[cOtherUid];
-            const isSelected = selectedConv?.id === conv.id;
-            return (
-              <button 
-                key={conv.id}
-                onClick={() => setSelectedConv(conv)}
-                className={`w-full p-4 text-left transition-all flex items-center gap-4 rounded-2xl ${isSelected ? 'bg-white shadow-xl scale-[1.02] ring-1 ring-foundation-200' : 'hover:bg-foundation-100/50'}`}
+            ) : (
+              <button
+                id="sign-up-google-trigger"
+                onClick={() => setShowAuthModal(true)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 hover:bg-slate-900 transition-all rounded-lg text-xs font-semibold text-white cursor-pointer"
               >
-                <div className="relative">
-                  <img src={cOtherUser?.photoURL || `https://ui-avatars.com/api/?name=${cOtherUser?.displayName}`} className="w-14 h-14 rounded-2xl border-2 border-white shadow-sm object-cover" alt="" />
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-lg border-2 border-white shadow-sm"></div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-center mb-1">
-                    <p className="text-sm font-black text-foundation-900 truncate uppercase tracking-tight">{cOtherUser?.displayName}</p>
-                    {conv.updatedAt && (
-                      <span className="text-[9px] text-foundation-400 font-bold">{format(conv.updatedAt.toDate ? conv.updatedAt.toDate() : new Date(), 'p')}</span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-foundation-500 truncate leading-snug font-medium italic">{conv.lastMessage || 'New connection'}</p>
-                </div>
+                {/* Google Multi-colored SVG Logo */}
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                </svg>
+                <span className="font-sans font-bold">Google Sign Up</span>
               </button>
-            );
-          })}
-        </div>
-      </div>
+            )}
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-white relative">
-        {selectedConv ? (
-          <>
-            {/* Chat Header */}
-            <div className="p-5 border-b border-foundation-100 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-20">
-               <div className="flex items-center gap-4">
-                  <img 
-                    src={otherUser?.photoURL || undefined} 
-                    className="w-12 h-12 rounded-2xl border-2 border-snap-blue shadow-sm object-cover" 
-                    alt="" 
-                  />
-                  <div>
-                    <span className="font-black text-foundation-900 text-base uppercase tracking-wider italic block">{otherUser?.displayName}</span>
-                    <div className="flex items-center gap-2">
-                       <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                       <span className="text-[10px] text-foundation-400 font-bold uppercase tracking-widest">Active now</span>
-                    </div>
-                  </div>
-               </div>
-               <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => otherUid && onStartCall(otherUid, 'voice')}
-                    className="w-12 h-12 rounded-2xl bg-foundation-50 text-foundation-500 hover:bg-snap-blue hover:text-white transition-all shadow-sm flex items-center justify-center p-0"
-                  >
-                    <Phone size={22} />
-                  </button>
-                  <button 
-                    onClick={() => otherUid && onStartCall(otherUid, 'video')}
-                    className="w-12 h-12 rounded-2xl bg-foundation-50 text-foundation-500 hover:bg-snap-purple hover:text-white transition-all shadow-sm flex items-center justify-center p-0"
-                  >
-                    <Video size={22} />
-                  </button>
-                  <div className="relative">
-                    <button 
-                      onClick={() => setShowConvMenu(!showConvMenu)}
-                      className={`w-12 h-12 rounded-2xl border-2 transition-all flex items-center justify-center ${showConvMenu ? 'bg-foundation-900 border-foundation-900 text-white shadow-xl' : 'bg-white border-foundation-100 text-foundation-400 hover:border-foundation-200 hover:text-foundation-900'}`}
-                    >
-                      <MoreVertical size={20} />
-                    </button>
-                    <AnimatePresence>
-                      {showConvMenu && (
-                        <>
-                          <div className="fixed inset-0 z-20" onClick={() => setShowConvMenu(false)} />
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                            className="absolute right-0 mt-3 w-64 bg-white/95 backdrop-blur-md border border-foundation-200 rounded-3xl shadow-2xl z-30 py-4 overflow-hidden origin-top-right"
-                          >
-                             <div className="px-6 py-2 mb-2 border-b border-foundation-50 space-y-1">
-                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-foundation-400">Manage Chat</p>
-                                <p className="text-sm font-black text-foundation-900 truncate">{otherUser?.displayName}</p>
-                             </div>
-                             <div className="p-2 space-y-1">
-                                <button className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 hover:text-snap-blue transition-all uppercase tracking-[0.15em] rounded-2xl group">
-                                   <div className="w-10 h-10 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-snap-blue/10">
-                                      <UserIcon size={16} />
-                                   </div>
-                                   View Profile
-                                </button>
-                                <button className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 transition-all uppercase tracking-[0.15em] rounded-2xl group">
-                                   <div className="w-10 h-10 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-foundation-100">
-                                      <Bell size={16} />
-                                   </div>
-                                   Mute Session
-                                </button>
-                                <button className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-foundation-600 hover:bg-foundation-50 transition-all uppercase tracking-[0.15em] rounded-2xl group">
-                                   <div className="w-10 h-10 rounded-xl bg-foundation-50 flex items-center justify-center group-hover:bg-foundation-100">
-                                      <Clock size={16} />
-                                   </div>
-                                   Chat History
-                                </button>
-                                <div className="mx-4 my-2 border-t border-foundation-50" />
-                                <button className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-rose-500 hover:bg-rose-50 transition-all uppercase tracking-[0.15em] rounded-2xl group">
-                                   <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center group-hover:bg-rose-100">
-                                      <Trash2 size={16} />
-                                   </div>
-                                   Clear Conversation
-                                </button>
-                             </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-               </div>
+            <div className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5">
+              <button 
+                id="toggle-public-view"
+                onClick={() => setIsAdminMode(false)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${!isAdminMode ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+              >
+                Public View
+              </button>
+              <button 
+                id="toggle-admin-view"
+                onClick={() => setIsAdminMode(true)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${isAdminMode ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+              >
+                <Lock size={12} />
+                Admin Controls
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </header>
+
+      {/* Hero Analytics Bar */}
+      <section id="hero-analytics" className="bg-slate-950 border-b border-slate-800">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            
+            <div id="metric-total-invested" className="bg-slate-900/40 border border-slate-800/60 p-4 rounded-xl flex items-center gap-3.5 hover:border-slate-700/55 transition-all">
+              <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                <span className="font-display text-xl font-bold">৳</span>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-widest font-mono font-bold">Total Capital Invested</p>
+                <p className="font-display text-lg sm:text-2xl font-bold text-white mt-0.5 font-mono">৳{(totalRaisedValue).toLocaleString()}</p>
+                <div className="flex items-center gap-1 text-[10px] text-emerald-400 mt-1">
+                  <CheckCircle size={10} />
+                  <span>{overallRaisedPercentage}% Fund Goal Met</span>
+                </div>
+              </div>
             </div>
 
-            {/* Messages Area */}
-            <div 
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto p-6 space-y-2 bg-[#F6F7F9] custom-scrollbar"
-            >
-              {messages.map((msg, idx) => {
-                const isMine = msg.senderId === profile.uid;
-                const prevMsg = messages[idx - 1];
-                const showHeader = !prevMsg || prevMsg.senderId !== msg.senderId || 
-                                (msg.createdAt?.toDate && prevMsg.createdAt?.toDate && 
-                                 msg.createdAt.toDate().getTime() - prevMsg.createdAt.toDate().getTime() > 300000);
+            <div id="metric-completed-projects" className="bg-slate-900/40 border border-slate-800/60 p-4 rounded-xl flex items-center gap-3.5 hover:border-slate-700/55 transition-all">
+              <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
+                <Award size={20} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-widest font-mono font-bold">Active Scope Scale</p>
+                <p className="font-display text-lg sm:text-2xl font-bold text-white mt-0.5">{completedProjectsCount}<span className="text-slate-500 text-sm font-light"> / {totalProjectsCount} Built</span></p>
+                <p className="text-[10px] text-slate-400 mt-1 italic">{ongoingProjectsCount} in active progression</p>
+              </div>
+            </div>
+
+            <div id="metric-specifications-vault" className="bg-slate-900/40 border border-slate-800/60 p-4 rounded-xl flex items-center gap-3.5 hover:border-slate-700/55 transition-all">
+              <div className="h-10 w-10 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+                <FileCheck2 size={20} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-widest font-mono font-bold">Specifications Vault</p>
+                <p className="font-display text-lg sm:text-2xl font-bold text-white mt-0.5">{totalFilesCount} <span className="text-slate-500 text-sm font-light">Files</span></p>
+                <p className="text-[10px] text-cyan-400 mt-1 flex items-center gap-1">
+                  <Activity size={10} className="animate-pulse" /> Live Uploads Retained
+                </p>
+              </div>
+            </div>
+
+            <div id="metric-direct-beneficiaries" className="bg-slate-900/40 border border-slate-800/60 p-4 rounded-xl flex items-center gap-3.5 hover:border-slate-700/55 transition-all">
+              <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
+                <Users size={20} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-widest font-mono font-bold">Estimated Impact</p>
+                <p className="font-display text-lg sm:text-2xl font-bold text-white mt-0.5">
+                  {(projects.reduce((sum, p) => sum + p.beneficiariesCount, 0)).toLocaleString()}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                  <Sparkles size={10} className="text-amber-400" /> Rural souls impacted directly
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* Main Panel Workspace */}
+      <main id="main-content-layout" className="flex-1 mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6">
+        
+        {/* Left Side: Navigation Filter Shell & Project Showcase Grid */}
+        <section id="showcase-left-panel" className="w-full lg:w-5/12 flex flex-col gap-4">
+          
+          <div id="filter-shell" className="bg-slate-950 p-4 rounded-xl border border-slate-800/70 shadow-xl space-y-4">
+            
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-bold text-white text-base flex items-center gap-2">
+                <Activity size={16} className="text-emerald-500" />
+                Project Showcase Catalogue
+              </h2>
+              {isAdminMode && (
+                <button 
+                  id="open-create-modal"
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center gap-1 transition shadow-lg shadow-emerald-900/25 cursor-pointer"
+                >
+                  <Plus size={14} /> Add Project
+                </button>
+              )}
+            </div>
+
+            {/* Direct Instant Search input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+              <input 
+                id="search-input"
+                type="text"
+                placeholder="Search blueprints, locations, budgets..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-850 rounded-lg text-xs placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-slate-100 transition-all"
+              />
+              {searchQuery && (
+                <button 
+                  id="clear-search"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-2.5 hover:text-white text-slate-500"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Structured Dual Select Filters */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Category Sector</label>
+                <div className="relative">
+                  <Filter className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                  <select 
+                    id="filter-category"
+                    value={selectedCategory}
+                    onChange={e => setSelectedCategory(e.target.value)}
+                    className="w-full pl-8 pr-2 py-1.5 bg-slate-900 border border-slate-850 rounded-lg text-xs focus:outline-none focus:border-emerald-500 text-slate-100 italic"
+                  >
+                    <option value="All">All Sectors</option>
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Health">Health</option>
+                    <option value="Education">Education</option>
+                    <option value="Disaster Relief">Disaster Relief</option>
+                    <option value="Agriculture">Agriculture</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">Operational Status</label>
+                <div className="relative">
+                  <Filter className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                  <select 
+                    id="filter-status"
+                    value={selectedStatus}
+                    onChange={e => setSelectedStatus(e.target.value)}
+                    className="w-full pl-8 pr-2 py-1.5 bg-slate-900 border border-slate-850 rounded-lg text-xs focus:outline-none focus:border-emerald-500 text-slate-100 italic"
+                  >
+                    <option value="All">All States</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Planning">Planning</option>
+                    <option value="On Hold">On Hold</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Project List Column */}
+          <div id="project-list-wrapper" className="space-y-3 max-h-[66vh] overflow-y-auto pr-1">
+            {filteredProjects.length === 0 ? (
+              <div id="no-projects-found" className="bg-slate-950 border border-slate-850 p-8 rounded-xl text-center space-y-2">
+                <AlertCircle className="mx-auto h-10 w-10 text-slate-600" />
+                <p className="text-sm font-semibold text-slate-400">No Projects Found</p>
+                <p className="text-xs text-slate-500">Refine or expand your filter targets or add a new Hazi Bari charter.</p>
+              </div>
+            ) : (
+              filteredProjects.map((proj) => {
+                const isFocused = proj.id === selectedProjectId;
+                const fundPercentage = Math.round((proj.raisedFund / proj.targetFund) * 100);
 
                 return (
-                  <MessageBubble 
-                    key={msg.id} 
-                    msg={msg} 
-                    isMine={isMine} 
-                    otherUser={otherUser} 
-                    showHeader={showHeader}
-                    onReact={(emoji) => handleReact(msg.id, emoji)} 
-                    onUpdate={(data) => handleUpdateMessage(msg.id, data)}
-                    onPreview={() => setPreviewDoc(msg)}
-                  />
-                );
-              })}
-              <div id="messages-end"></div>
-            </div>
-
-            {/* Floating Action Menu */}
-            <AnimatePresence>
-              {showMediaMenu && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  className="absolute bottom-24 left-6 z-40 flex gap-4"
-                >
-                  <MediaButton icon={<ImageIcon size={22} />} label="Gallery" color="bg-emerald-500" onClick={() => fileInputRef.current?.click()} />
-                  <MediaButton icon={<Camera size={22} />} label="Snap" color="bg-snap-yellow !text-black" onClick={() => {}} />
-                  <MediaButton icon={<FileText size={22} />} label="Doc" color="bg-snap-blue" onClick={() => fileInputRef.current?.click()} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
-
-            {/* Input Footer */}
-            <div className="p-4 bg-white border-t border-foundation-100">
-               <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => setShowMediaMenu(!showMediaMenu)}
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${showMediaMenu ? 'bg-foundation-900 text-white' : 'bg-foundation-100 text-foundation-500'}`}
-                  >
-                     {showMediaMenu ? <Plus size={24} className="rotate-45" /> : <Paperclip size={24} />}
-                  </button>
-                  
-                  <div className="flex-1 bg-foundation-100 py-3 px-5 rounded-2xl border-2 border-transparent focus-within:border-snap-blue transition-all relative">
-                     <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="flex items-center gap-3">
-                        <button type="button" className="text-foundation-400 hover:text-snap-purple transition-colors">
-                           <Smile size={22} />
-                        </button>
-                        <input 
-                          value={newMessage}
-                          onChange={e => setNewMessage(e.target.value)}
-                          placeholder="Say something..."
-                          className="flex-1 bg-transparent text-sm font-bold placeholder-foundation-400 outline-none"
-                        />
-                        {newMessage.trim() ? (
-                          <button type="submit" className="text-snap-blue hover:scale-110 transition-transform">
-                             <Send size={24} />
-                          </button>
-                        ) : (
-                          <div className="flex items-center">
-                             <RecordingButton 
-                               isRecording={isRecording} 
-                               onStart={startRecording} 
-                               onEnd={stopRecording} 
-                             />
-                          </div>
-                        )}
-                     </form>
-                     
-                     {isRecording && (
-                       <motion.div 
-                         initial={{ opacity: 0, scale: 0.9 }}
-                         animate={{ opacity: 1, scale: 1 }}
-                         className="absolute inset-0 bg-snap-purple rounded-2xl flex items-center px-6 gap-4 text-white"
-                       >
-                          <div className="animate-pulse w-3 h-3 bg-red-400 rounded-full"></div>
-                          <span className="font-mono text-sm">{Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}</span>
-                          <div className="flex-1 overflow-hidden">
-                             <div className="flex gap-0.5 items-center">
-                               {[...Array(12)].map((_, i) => (
-                                 <motion.div 
-                                   key={i}
-                                   animate={{ height: [4, Math.random() * 20 + 4, 4] }}
-                                   transition={{ repeat: Infinity, duration: 0.5, delay: i * 0.05 }}
-                                   className="w-1 bg-white/50 rounded-full"
-                                 />
-                               ))}
-                             </div>
-                          </div>
-                          <button onClick={cancelRecording} className="text-[10px] font-black uppercase tracking-widest text-white/70 hover:text-white">Slide to cancel «</button>
-                       </motion.div>
-                     )}
-                  </div>
-               </div>
-            </div>
-            <AnimatePresence>
-              {previewDoc && (
-                <DocumentViewer 
-                  doc={previewDoc} 
-                  onClose={() => setPreviewDoc(null)} 
-                />
-              )}
-            </AnimatePresence>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-foundation-400 p-12 bg-foundation-50/20">
-             <motion.div 
-               animate={{ y: [0, -10, 0] }}
-               transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-               className="w-32 h-32 bg-snap-yellow rounded-[2.5rem] flex items-center justify-center shadow-2xl mb-12 relative"
-             >
-                <Bot size={64} className="text-foundation-900" />
-                <div className="absolute -top-4 -right-4 w-12 h-12 bg-snap-blue rounded-2xl flex items-center justify-center text-white shadow-lg rotate-12">
-                   <MessageCircle size={24} />
-                </div>
-             </motion.div>
-             <h2 className="text-2xl font-display font-black text-foundation-900 uppercase tracking-[0.2em] italic text-center mb-4">Your Connections</h2>
-             <p className="text-sm text-foundation-500 font-medium max-w-[280px] text-center mb-8 leading-relaxed">
-                Connect with members in real-time through voice, video, and snaps.
-             </p>
-             <button className="px-10 py-4 bg-foundation-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-black transition-all shadow-xl active:scale-95 flex items-center gap-3">
-                <Plus size={18} /> New Message
-             </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MediaButton({ icon, label, color, onClick }: { icon: any, label: string, color: string, onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="flex flex-col items-center gap-2 group">
-       <div className={`${color} w-14 h-14 rounded-2xl text-white flex items-center justify-center shadow-lg group-hover:scale-110 group-active:scale-95 transition-all`}>
-          {icon}
-       </div>
-       <span className="text-[10px] font-black uppercase tracking-widest text-foundation-600 group-hover:text-foundation-900 transition-colors">{label}</span>
-    </button>
-  );
-}
-
-function RecordingButton({ isRecording, onStart, onEnd }: { isRecording: boolean, onStart: () => void, onEnd: () => void }) {
-  return (
-    <button 
-      onMouseDown={onStart}
-      onMouseUp={onEnd}
-      onTouchStart={onStart}
-      onTouchEnd={onEnd}
-      className={`p-2 transition-all duration-300 ${isRecording ? 'text-snap-purple scale-150' : 'text-foundation-400 hover:text-snap-blue'}`}
-    >
-       <Mic size={24} />
-    </button>
-  );
-}
-
-function DocumentViewer({ doc, onClose }: { doc: Message, onClose: () => void }) {
-  const isPDF = doc.mimeType === 'application/pdf';
-  const isOffice = doc.mimeType?.includes('officedocument') || doc.mimeType?.includes('ms-excel') || doc.mimeType?.includes('ms-powerpoint') || doc.mimeType?.includes('msword');
-  
-  // For Office docs, we need a public URL for Google/MS viewers.
-  // Since we have base64, we'll try to create a temporary Blob URL if possible, 
-  // but Google Viewers won't work with local Blob URLs.
-  // We'll show a friendly message if we can't preview.
-  
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (doc.mediaUrl && (isPDF || doc.type === 'file')) {
-      const fetchBlob = async () => {
-        const response = await fetch(doc.mediaUrl!);
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        setBlobUrl(url);
-      };
-      fetchBlob();
-    }
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [doc.mediaUrl]);
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col"
-    >
-      <div className="p-4 flex items-center justify-between text-white border-b border-white/10 bg-black/50">
-        <div className="flex items-center gap-3">
-           <FileText size={24} className="text-snap-yellow" />
-           <div>
-              <p className="text-sm font-black uppercase tracking-wider italic">{doc.fileName || 'Untitled Document'}</p>
-              <p className="text-[10px] text-white/50 font-bold uppercase tracking-widest">{doc.mimeType || 'Unknown Type'}</p>
-           </div>
-        </div>
-        <div className="flex items-center gap-4">
-           {doc.mediaUrl && (
-             <a 
-               href={doc.mediaUrl} 
-               download={doc.fileName}
-               className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-all"
-             >
-                <Download size={20} />
-             </a>
-           )}
-           <button onClick={onClose} className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-all">
-              <X size={20} />
-           </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-hidden relative bg-foundation-900/50">
-        {isPDF && blobUrl ? (
-          <iframe 
-            src={`${blobUrl}#toolbar=0`} 
-            className="w-full h-full border-none"
-            title="PDF Preview"
-            sandbox="allow-scripts allow-same-origin"
-          />
-        ) : isOffice ? (
-          <div className="w-full h-full flex flex-col items-center justify-center p-12 text-center text-white space-y-6">
-             <div className="w-24 h-24 bg-snap-blue rounded-[2.5rem] flex items-center justify-center shadow-2xl relative">
-                <File size={48} />
-                <div className="absolute -top-4 -right-4 w-12 h-12 bg-snap-yellow rounded-2xl flex items-center justify-center text-black shadow-lg">
-                   <Lock size={24} />
-                </div>
-             </div>
-             <div className="space-y-4 max-w-md">
-                <h3 className="text-xl font-display font-black uppercase tracking-widest italic">Confidential File</h3>
-                <p className="text-sm text-white/60 leading-relaxed">
-                  Office documents require a public URL for full cloud previewing. For security, we've kept this file isolated.
-                </p>
-                <div className="flex flex-col gap-2 pt-4">
-                   <a 
-                     href={doc.mediaUrl} 
-                     download={doc.fileName}
-                     className="px-8 py-3 bg-white text-foundation-900 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-snap-yellow transition-all flex items-center justify-center gap-2"
-                   >
-                      <Download size={16} /> Open & Download
-                   </a>
-                </div>
-             </div>
-          </div>
-        ) : doc.type === 'image' ? (
-           <div className="w-full h-full flex items-center justify-center p-4">
-              <img src={doc.mediaUrl} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" alt="" />
-           </div>
-        ) : doc.type === 'video' ? (
-           <div className="w-full h-full flex items-center justify-center p-4">
-              <video src={doc.mediaUrl} controls autoPlay className="max-w-full max-h-full rounded-lg shadow-2xl" />
-           </div>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-white/50 italic text-sm">
-             Preview not supported for this file type.
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-function MessageBubble({ msg, isMine, otherUser, onReact, showHeader, onUpdate, onPreview }: { 
-  msg: Message, 
-  isMine: boolean, 
-  otherUser: any, 
-  onReact: (emoji: string) => any, 
-  showHeader: boolean, 
-  onUpdate: (data: Partial<Message>) => any, 
-  onPreview?: () => void,
-  key?: any
-}) {
-  const [showReactions, setShowReactions] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const timerRef = useRef<number | null>(null);
-
-  const emojiList = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
-
-  const handleTouchStart = () => {
-    timerRef.current = window.setTimeout(() => {
-      setShowReactions(true);
-    }, 500);
-  };
-
-  const handleTouchEnd = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-  };
-
-  return (
-    <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} ${showHeader ? 'mt-4' : 'mt-0.5'}`}>
-      {!isMine && showHeader && (
-        <span className="text-[9px] font-black text-foundation-400 uppercase tracking-widest mb-1 ml-11">
-          {otherUser?.displayName}
-        </span>
-      )}
-      <div 
-        className={`flex items-end gap-2 group max-w-[85%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
-        onMouseDown={handleTouchStart}
-        onMouseUp={handleTouchEnd}
-        onMouseLeave={handleTouchEnd}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
-        {!isMine && (
-          <div className="w-8 h-8 flex-shrink-0">
-             {showHeader ? (
-               <img src={otherUser?.photoURL} className="w-8 h-8 rounded-xl object-cover border-2 border-white shadow-sm" alt="" />
-             ) : null}
-          </div>
-        )}
-        
-        <div className="relative">
-          <motion.div 
-            whileTap={{ scale: 0.98 }}
-            className={`p-3.5 shadow-sm text-sm font-medium leading-relaxed transition-all relative ${
-              isMine 
-                ? 'bg-snap-blue text-white rounded-3xl rounded-br-[0.25rem] shadow-snap-blue/10' 
-                : 'bg-white text-foundation-900 border border-foundation-200 rounded-3xl rounded-bl-[0.25rem]'
-            }`}
-          >
-            {msg.type === 'audio' && msg.mediaUrl && (
-              <div className="space-y-3">
-                <div className={isMine ? 'text-white' : 'text-indigo-600'}>
-                  <AudioPlayer src={msg.mediaUrl} />
-                </div>
-                {msg.transcription ? (
-                  <div className={`p-4 rounded-2xl text-[13px] leading-relaxed relative group/trans ${isMine ? 'bg-white/10 text-white/90' : 'bg-foundation-50 text-foundation-700 border border-foundation-200'}`}>
-                    <div className="flex items-center gap-2 mb-2 opacity-50">
-                       <Bot size={14} />
-                       <span className="text-[10px] font-black uppercase tracking-widest">Transcription</span>
-                    </div>
-                    <p className="whitespace-pre-wrap font-medium">{msg.transcription}</p>
-                    <button 
-                      onClick={async () => {
-                        setIsTranscribing(true);
-                        const text = await transcribeAudio(msg.mediaUrl!);
-                        if (text) onUpdate({ transcription: text });
-                        setIsTranscribing(false);
-                      }}
-                      className="absolute top-3 right-3 opacity-0 group-hover/trans:opacity-100 transition-opacity p-1 hover:bg-foundation-200 rounded-lg text-foundation-400"
-                    >
-                      <RefreshCw size={14} className={isTranscribing ? 'animate-spin' : ''} />
-                    </button>
-                  </div>
-                ) : (
-                  <button 
-                    onClick={async () => {
-                      setIsTranscribing(true);
-                      const text = await transcribeAudio(msg.mediaUrl!);
-                      if (text) onUpdate({ transcription: text });
-                      setIsTranscribing(false);
-                    }}
-                    disabled={isTranscribing}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      isMine 
-                        ? 'bg-white/20 text-white hover:bg-white/30' 
-                        : 'bg-foundation-100 text-foundation-600 hover:bg-foundation-200'
+                  <div 
+                    key={proj.id}
+                    id={`project-card-${proj.id}`}
+                    onClick={() => setSelectedProjectId(proj.id)}
+                    className={`group/card relative rounded-xl border p-4 cursor-pointer transition-all duration-300 transform hover:-translate-y-0.5 ${
+                      isFocused 
+                      ? 'bg-slate-950 border-emerald-500/80 shadow-[0_4px_24px_rgba(16,185,129,0.06)]' 
+                      : 'bg-slate-950/60 border-slate-850 hover:bg-slate-950 hover:border-slate-700'
                     }`}
                   >
-                    {isTranscribing ? <RefreshCw size={14} className="animate-spin" /> : <Bot size={14} />}
-                    {isTranscribing ? 'Transcribing...' : 'Convert to Text'}
-                  </button>
-                )}
-              </div>
-            )}
-            {msg.type === 'image' && msg.mediaUrl && (
-              <img 
-                onClick={onPreview}
-                src={msg.mediaUrl} 
-                className="rounded-2xl max-h-72 w-full object-cover shadow-sm bg-foundation-100 cursor-pointer hover:opacity-90 transition-opacity" 
-                alt="Snapped image" 
-              />
-            )}
-            {msg.type === 'video' && msg.mediaUrl && (
-              <div 
-                onClick={onPreview}
-                className="rounded-2xl overflow-hidden cursor-pointer relative group bg-black"
-                style={{ maxHeight: '280px' }}
-              >
-                 <video src={msg.mediaUrl} className="w-full h-full object-cover opacity-80" />
-                 <div className="absolute inset-0 flex items-center justify-center text-white scale-90 group-hover:scale-100 transition-transform">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center">
-                       <Play size={24} fill="white" />
+                    {/* Top row */}
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${getCategoryColor(proj.category)}`}>
+                        {proj.category}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${getStatusBadge(proj.status)}`}>
+                        {proj.status}
+                      </span>
                     </div>
-                 </div>
-              </div>
+
+                    <h3 className="font-display font-bold text-sm text-white group-hover/card:text-emerald-400 transition-colors line-clamp-1">
+                      {proj.title}
+                    </h3>
+                    
+                    <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                      {proj.description}
+                    </p>
+
+                    {/* Funding representation */}
+                    <div className="mt-3 grid grid-cols-2 text-[10px] border-t border-slate-900 pt-2.5">
+                      <div>
+                        <span className="text-slate-500 block uppercase font-mono">Raised Funding</span>
+                        <span className="text-white font-bold font-mono">৳{proj.raisedFund.toLocaleString()}</span>
+                        <span className="text-slate-500 font-normal"> ({fundPercentage}%)</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-500 block uppercase font-mono">Target Budget</span>
+                        <span className="text-slate-300 font-semibold font-mono">৳{proj.targetFund.toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    {/* Progress Indicator */}
+                    <div className="mt-2.5">
+                      <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+                        <span>Milestone Success</span>
+                        <span className="font-bold text-emerald-400">{proj.progress}%</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-emerald-500 rounded-full transition-all duration-700" 
+                          style={{ width: `${proj.progress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Footer Location & File Counter */}
+                    <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <MapPin size={10} className="text-slate-600" />
+                        {proj.location}
+                      </span>
+                      <span className="flex items-center gap-1.5 font-mono text-emerald-400 font-bold bg-emerald-950/45 px-1.5 py-0.5 rounded border border-emerald-900/40">
+                        <FileText size={10} />
+                        {proj.files.length} Spec Vaulted
+                      </span>
+                    </div>
+
+                    {/* Arrow decorator */}
+                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 opacity-0 group-hover/card:opacity-100 group-hover/card:translate-x-1 transition-all duration-300">
+                      <ChevronRight size={16} className="text-emerald-500" />
+                    </div>
+
+                    {/* Quick Delete Admin Tool */}
+                    {isAdminMode && (
+                      <button 
+                        id={`delete-project-${proj.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(proj.id);
+                        }}
+                        className="absolute bottom-2 right-2 p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded border border-rose-500/20 opacity-0 group-hover/card:opacity-100 transition-opacity"
+                        title="Delete Project Space"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+
+                  </div>
+                );
+              })
             )}
-            {msg.type === 'file' && (
-              <div 
-                onClick={onPreview}
-                className={`p-1 rounded-2xl cursor-pointer hover:bg-black/5 transition-all flex items-center gap-3 min-w-[200px] ${isMine ? 'text-white' : 'text-foundation-900'}`}
-              >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-inner ${isMine ? 'bg-white/20' : 'bg-foundation-100'}`}>
-                  <FileText size={24} />
-                </div>
-                <div className="flex-1 min-w-0 pr-4">
-                  <p className="text-[11px] font-black uppercase tracking-wider truncate mb-0.5">{msg.fileName || 'Document'}</p>
-                  <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest">{msg.fileSize ? `${(msg.fileSize / 1024).toFixed(1)} KB` : 'File'}</p>
-                </div>
-                <div className={`p-2 rounded-lg ${isMine ? 'bg-white/10' : 'bg-foundation-50'}`}>
-                   <Eye size={16} />
-                </div>
-              </div>
-            )}
-            {msg.type === 'text' && <p className="whitespace-pre-wrap">{msg.content}</p>}
-          </motion.div>
+          </div>
+
+        </section>
+
+        {/* Right Side: Immersive Inspection Workspace & Upload Cockpit */}
+        <section id="showcase-right-panel" className="w-full lg:w-7/12">
           
-          <AnimatePresence>
-            {showReactions && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10, scale: 0.8 }}
-                animate={{ opacity: 1, y: -45, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.8 }}
-                className="absolute left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-xl rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.15)] p-1.5 flex gap-1.5 border border-foundation-100"
-                onMouseLeave={() => setShowReactions(false)}
-              >
-                {emojiList.map(emoji => (
-                  <button 
-                    key={emoji}
-                    onClick={() => { onReact(emoji); setShowReactions(false); }}
-                    className="hover:scale-150 transition-transform p-1.5 active:animate-ping"
+          {!selectedProject ? (
+            <div id="no-active-workspace" className="h-full bg-slate-950 border border-slate-850 rounded-2xl flex flex-col items-center justify-center p-8 text-center space-y-4">
+              <div className="h-14 w-14 rounded-full bg-slate-900 border border-slate-850 flex items-center justify-center text-slate-600">
+                <Building size={28} />
+              </div>
+              <div>
+                <p className="text-base font-bold text-white">No active project selected</p>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm">Please select a Hazi Bari development project from the left showcase list to investigate blueprints, files, logs, and upload audits.</p>
+              </div>
+            </div>
+          ) : (
+            <div id="active-workspace-panel" className="bg-slate-950 rounded-2xl border border-slate-800/80 shadow-2xl overflow-hidden flex flex-col h-full">
+              
+              {/* Cover Banner Theme */}
+              <div id="project-workspace-banner" className={`bg-gradient-to-r ${selectedProject.gradient} p-6 sm:p-8 relative overflow-hidden shrink-0 border-b border-slate-800`}>
+                <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
+                <div className="absolute right-0 top-0 w-1/3 h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent pointer-events-none" />
+                
+                <div className="relative z-10 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono tracking-wider uppercase bg-emerald-500 text-white font-bold shadow-md shadow-emerald-900/30`}>
+                      {selectedProject.category}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono border border-white/20 bg-white/10 text-white/90">
+                      Est. {selectedProject.startedDate}
+                    </span>
+                  </div>
+
+                  <h1 id="workspace-project-title" className="font-display font-extrabold text-xl sm:text-2xl text-white tracking-tight leading-snug">
+                    {selectedProject.title}
+                  </h1>
+
+                  <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-slate-300">
+                    <span className="flex items-center gap-1">
+                      <MapPin size={13} className="text-emerald-400" />
+                      {selectedProject.location}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Users size={13} className="text-cyan-400" />
+                      {selectedProject.beneficiariesCount}+ Impacted souls
+                    </span>
+                    {selectedProject.completionDate && (
+                      <span className="flex items-center gap-1 text-emerald-300 font-semibold">
+                        <CheckCircle size={13} />
+                        Completed On {selectedProject.completionDate}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Segmented Panels Tab Navigation (Details, Documents Vault, Progress Logs) */}
+              <div className="p-6 space-y-6 flex-1 overflow-y-auto max-h-[85vh]">
+                
+                {/* Project Overview Meta Details Card */}
+                <div id="panel-metrics-row" className="grid grid-cols-3 gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-900">
+                  <div className="text-center sm:text-left">
+                    <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 font-bold block">Status Index</span>
+                    <span className="inline-flex mt-1.5"><span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase font-extrabold ${getStatusBadge(selectedProject.status)}`}>{selectedProject.status}</span></span>
+                  </div>
+                  
+                  <div className="text-center sm:text-left border-l border-slate-800/80 pl-4">
+                    <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 font-bold block">Consolidated Fund</span>
+                    <p className="text-sm font-extrabold font-mono text-white mt-1">
+                      ৳{selectedProject.raisedFund.toLocaleString()}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-mono">of ৳{selectedProject.targetFund.toLocaleString()} target</span>
+                  </div>
+
+                  <div className="text-center sm:text-left border-l border-slate-800/80 pl-4">
+                    <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 font-bold block">Milestone Complete</span>
+                    <div className="flex items-center justify-center sm:justify-start gap-1.5 mt-1">
+                      <span className="text-sm font-extrabold font-mono text-emerald-400">{selectedProject.progress}%</span>
+                      <div className="hidden sm:block h-2.5 w-16 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500" style={{ width: `${selectedProject.progress}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main description section */}
+                <div id="project-description-box" className="space-y-2">
+                  <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-extrabold flex items-center gap-1.5">
+                    <Info size={14} className="text-emerald-500" />
+                    Project Background & Charter
+                  </h3>
+                  <p className="text-sm text-slate-300 leading-relaxed font-sans">
+                    {selectedProject.details}
+                  </p>
+                </div>
+
+                {/* KEY MILESTONES WORKSPACE CHECKLIST */}
+                <div id="project-milestones-checklist-container" className="space-y-4 bg-slate-900/30 p-5 rounded-xl border border-slate-900">
+                  
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Flag size={15} className="text-emerald-500 animate-pulse-slow font-bold" />
+                      <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-extrabold">
+                        Key Milestone Assessment & Checklist
+                      </h3>
+                    </div>
+                    {/* Milestone metrics KPI overview */}
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono font-bold">
+                      {selectedProject.milestones?.filter(m => m.status === 'Completed').length || 0} / {selectedProject.milestones?.length || 0} Completed
+                    </span>
+                  </div>
+
+                  {/* Checklist Rows wrapper */}
+                  {(!selectedProject.milestones || selectedProject.milestones.length === 0) ? (
+                    <div className="py-4 text-center text-slate-500 text-xs italic">
+                      No key milestones uploaded for this project charter yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {selectedProject.milestones.map((m) => {
+                        return (
+                          <div 
+                            key={m.id} 
+                            id={`milestone-row-${m.id}`}
+                            className="flex items-center justify-between gap-4 p-3 bg-slate-950/60 border border-slate-850 rounded-lg hover:border-slate-800 transition"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              {/* Checkmark style status indicator */}
+                              <div 
+                                className={`h-5 w-5 rounded-full flex items-center justify-center shrink-0 border ${
+                                  m.status === 'Completed' 
+                                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' 
+                                    : m.status === 'In Progress'
+                                    ? 'border-blue-500 bg-blue-505/10 text-blue-400'
+                                    : 'border-slate-750 bg-slate-900/50 text-slate-505'
+                                }`}
+                                title={m.status}
+                              >
+                                {m.status === 'Completed' ? (
+                                  <CheckCircle size={12} className="stroke-[2.5]" />
+                                ) : m.status === 'In Progress' ? (
+                                  <Activity size={10} className="animate-spin" style={{ animationDuration: '6s' }} />
+                                ) : (
+                                  <Clock size={10} />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={`text-xs font-semibold leading-snug ${m.status === 'Completed' ? 'text-slate-450 line-through decoration-slate-650' : 'text-slate-200'}`}>
+                                  {m.title}
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                                  <Calendar size={10} />
+                                  Planned Date: {m.plannedDate}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Status change actions & delete controls */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isAdminMode ? (
+                                <>
+                                  {/* Status Dropdown selector */}
+                                  <select
+                                    id={`update-milestone-status-${m.id}`}
+                                    value={m.status}
+                                    onChange={(e) => handleUpdateMilestoneStatus(selectedProject.id, m.id, e.target.value as any)}
+                                    className="bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded font-mono font-medium text-slate-300 focus:outline-none focus:border-emerald-500"
+                                  >
+                                    <option value="Pending">Pending</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Completed">Completed</option>
+                                  </select>
+
+                                  {/* Remove Button */}
+                                  <button
+                                    id={`remove-milestone-btn-${m.id}`}
+                                    type="button"
+                                    onClick={() => handleDeleteMilestone(selectedProject.id, m.id)}
+                                    className="p-1 text-slate-500 hover:text-rose-405 bg-slate-900/50 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/25 rounded transition"
+                                    title="Remove Milestone"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </>
+                              ) : (
+                                /* Static view state badges for public */
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-mono tracking-wider font-bold ${
+                                  m.status === 'Completed' 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                    : m.status === 'In Progress'
+                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    : 'bg-slate-900 text-slate-500 border border-slate-800'
+                                }`}>
+                                  {m.status}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Admin additive nested miniature form */}
+                  {isAdminMode && (
+                    <form 
+                      id="milestone-addition-inline-form"
+                      onSubmit={handleCreateMilestone}
+                      className="pt-3.5 border-t border-slate-900 mt-2 space-y-2.5"
+                    >
+                      <p className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                        + Assess & Append Project Milestone Goal
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <input 
+                          id="new-milestone-title-input"
+                          type="text"
+                          required
+                          placeholder="Goal designation (e.g. Drilling 4 wells)"
+                          value={newMilestoneTitle}
+                          onChange={e => setNewMilestoneTitle(e.target.value)}
+                          className="w-full text-xs p-2 bg-slate-950 border border-slate-850 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100"
+                        />
+                        <div className="flex gap-2">
+                          <input 
+                            id="new-milestone-date-input"
+                            type="text"
+                            required
+                            placeholder="Planned Date (e.g. Jun 10, 2026)"
+                            value={newMilestoneDate}
+                            onChange={e => setNewMilestoneDate(e.target.value)}
+                            className="w-full text-xs p-2 bg-slate-950 border border-slate-850 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100 font-mono"
+                          />
+                          <select 
+                            id="new-milestone-status-select"
+                            value={newMilestoneStatus}
+                            onChange={e => setNewMilestoneStatus(e.target.value as any)}
+                            className="bg-slate-950 border border-slate-850 p-2 rounded-lg text-xs text-slate-300 font-medium focus:outline-none focus:border-emerald-500"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Completed">Completed</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        <button
+                          id="submit-new-milestone-btn"
+                          type="submit"
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/20"
+                        >
+                          <Plus size={12} /> Append Goal
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                </div>
+
+                {/* ADMIN STATUS / PROGRESS CONFIG CONTROL SHEET */}
+                {isAdminMode && (
+                  <div id="admin-interactive-slider-box" className="bg-slate-900/60 p-4 rounded-xl border border-dashed border-emerald-500/20 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                        <Settings size={13} />
+                        Charter Administrator Diagnostics
+                      </h4>
+                      <span className="text-[10px] font-mono text-slate-500 bg-slate-950 px-2 py-0.5 rounded">Fast Config Option</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* State status dropdown selector */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium text-slate-400 block">Assess State Status</label>
+                        <select 
+                          id="admin-status-select"
+                          value={editingStatusValue}
+                          onChange={e => setEditingStatusValue(e.target.value as any)}
+                          className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
+                        >
+                          <option value="Planning">Planning</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="On Hold">On Hold</option>
+                          <option value="Completed">Completed</option>
+                        </select>
+                      </div>
+
+                      {/* Percentage slide bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-[11px]">
+                          <label className="text-slate-400 font-medium">Progress Metrics Assess</label>
+                          <span className="font-mono font-bold text-emerald-400">{editingProgressValue}%</span>
+                        </div>
+                        <input 
+                          id="admin-progress-slider"
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value={editingProgressValue}
+                          disabled={editingStatusValue === 'Completed'}
+                          onChange={e => setEditingProgressValue(Number(e.target.value))}
+                          className="w-full accent-emerald-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
+                        />
+                        {editingStatusValue === 'Completed' && (
+                          <p className="text-[9px] text-slate-500 italic block">Completed status overrides to 100%.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <button 
+                      id="save-diagnostics-btn"
+                      onClick={handleUpdateProgressConfig}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle size={13} /> Save Assessment Changes
+                    </button>
+                  </div>
+                )}
+
+                {/* THE IMAGES AND DOCUMENTS TREASURY SECTION (CORE REQUISITE) */}
+                <div id="project-attachments-section" className="space-y-4">
+                  
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-extrabold flex items-center gap-1.5">
+                      <FileCheck2 size={15} className="text-emerald-500" />
+                      Documents & Blueprints Specification Vault
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400">
+                      {selectedProject.files.length} Saved Files
+                    </span>
+                  </div>
+
+                  {/* FILE DROPZONE AND UPLOADER CAPABILITY */}
+                  <div 
+                    id="dropzone-area"
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={onDrop}
+                    onClick={triggerFileSelection}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center gap-2 ${
+                      isDragging 
+                      ? 'border-emerald-400 bg-emerald-950/20' 
+                      : 'border-slate-800 hover:border-slate-700 hover:bg-slate-900/30'
+                    }`}
                   >
-                    {emoji}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                    <input 
+                      id="file-input-raw"
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={onFileChange}
+                      multiple
+                      className="hidden"
+                    />
 
-          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-             <div className={`absolute -bottom-2 ${isMine ? 'left-0' : 'right-0'} flex -space-x-1`}>
-                {Object.entries(msg.reactions).map(([uid, emoji]) => (
-                   <div key={uid} className="bg-white rounded-full shadow-lg border border-foundation-100 px-1.5 py-0.5 text-[10px] animate-in zoom-in slide-in-from-bottom-1">
-                      {emoji}
-                   </div>
-                ))}
-             </div>
+                    <div className="h-10 w-10 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800 group-hover:text-emerald-400 transition-colors">
+                      <Upload size={18} className="animate-bounce" style={{ animationDuration: '3s' }} />
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-semibold text-white">Drag & drop project files here, or <span className="text-emerald-400 hover:underline">browse files</span></p>
+                      <p className="text-[10px] text-slate-500 mt-1 uppercase font-mono">Supports blueprints, spreadsheets, PDFs, audit sheets, JPG, PNG & WEBP</p>
+                    </div>
+                  </div>
+
+                  {/* VISUAL LAYOUT CARDS LIST FOR SYSTEM RETRIEVED SECURE FILES */}
+                  {selectedProject.files.length === 0 ? (
+                    <div id="empty-vault-illustration" className="bg-slate-900/30 rounded-xl p-6 border border-slate-900 text-center text-slate-500 space-y-1">
+                      <FileArchive className="mx-auto h-7 w-7 text-slate-700" />
+                      <p className="text-xs font-medium">Specification vault currently empty.</p>
+                      <p className="text-[10px] text-slate-600">Include project photo updates, land surveys, raw audits, or structural spreadsheets for accountability.</p>
+                    </div>
+                  ) : (
+                    <div id="attachments-grid-list" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {selectedProject.files.map(file => {
+                        const isImg = file.type === 'image';
+                        return (
+                          <div 
+                            key={file.id} 
+                            id={`file-card-${file.id}`}
+                            className="bg-slate-900 border border-slate-850 p-3.5 rounded-xl hover:bg-slate-900/80 transition flex items-center gap-3 relative group"
+                          >
+                            {/* file thumbnail */}
+                            <div className="h-11 w-11 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden relative">
+                              {isImg ? (
+                                <img 
+                                  src={file.dataUrl} 
+                                  alt={file.name} 
+                                  className="object-cover h-full w-full"
+                                />
+                              ) : (
+                                <FileText className="h-5 w-5 text-emerald-400" />
+                              )}
+                            </div>
+
+                            {/* file meta info */}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-white truncate" title={file.name}>
+                                {file.name}
+                              </p>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5 font-mono">
+                                <span className="uppercase text-emerald-500 font-bold">{file.extension}</span>
+                                <span>&bull;</span>
+                                <span>{file.size}</span>
+                              </div>
+                              <p className="text-[9px] text-slate-500 mt-0.5">Uploaded {file.uploadedAt}</p>
+                            </div>
+
+                            {/* Actions overlay */}
+                            <div className="flex items-center gap-1">
+                              {isImg && (
+                                <button 
+                                  onClick={() => setActiveLightboxImage({ name: file.name, url: file.dataUrl })}
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 transition-colors"
+                                  title="Expand Lightbox Image"
+                                >
+                                  <Eye size={12} />
+                                </button>
+                              )}
+                              
+                              <button 
+                                onClick={() => initiateMockDownload(file)}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 transition-colors"
+                                title="Download Safe File Specification"
+                              >
+                                <Download size={12} />
+                              </button>
+
+                              {/* Delete option */}
+                              {isAdminMode && (
+                                <button 
+                                  id={`delete-file-${file.id}`}
+                                  onClick={() => handleDeleteFile(selectedProject.id, file.id)}
+                                  className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 rounded text-rose-400 transition-colors border border-rose-500/20"
+                                  title="Purge Attachment"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                </div>
+
+                {/* PROGRESS MILESTONE TIMELINE / CHRONOLOGY */}
+                <div id="project-timeline-chronicle" className="space-y-4">
+                  
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-extrabold flex items-center gap-1.5">
+                      <Clock size={15} className="text-emerald-500" />
+                      Audited Development Chronology & Updates
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400">
+                      {selectedProject.logs.length} Milestones
+                    </span>
+                  </div>
+
+                  {/* Form to submit daily updates log inside Admin controls */}
+                  {isAdminMode && (
+                    <form 
+                      id="log-addition-form"
+                      onSubmit={handleAddLog} 
+                      className="bg-slate-900/40 p-4 rounded-xl border border-slate-900 space-y-3.5"
+                    >
+                      <h4 className="text-[11px] font-semibold text-emerald-400 uppercase tracking-widest font-mono">Publish Live Progress Milestone</h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="sm:col-span-2 space-y-1">
+                          <input 
+                            id="log-title-input"
+                            type="text"
+                            placeholder="Brief Title (e.g. Completed foundation pour)"
+                            value={logTitle}
+                            onChange={e => setLogTitle(e.target.value)}
+                            className="w-full text-xs p-2.5 bg-slate-950 border border-slate-850 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <select 
+                            id="log-status-select"
+                            value={logStatus}
+                            onChange={e => setLogStatus(e.target.value as any)}
+                            className="w-full text-xs p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500"
+                          >
+                            <option value="success">&bull; Success Update</option>
+                            <option value="info">&bull; Informational Log</option>
+                            <option value="alert">&bull; Operational Alert</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <textarea 
+                          id="log-description-input"
+                          rows={2}
+                          placeholder="Provide descriptive audit comments detailing engineering specs, physical site photos, or supplier notes..."
+                          value={logDesc}
+                          onChange={e => setLogDesc(e.target.value)}
+                          className="w-full text-xs p-2.5 bg-slate-950 border border-slate-850 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100 resize-none"
+                        />
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button 
+                          id="submit-log"
+                          type="submit"
+                          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all shadow-md cursor-pointer"
+                        >
+                          Broadcast Update
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* THE TIMELINE CONTAINER */}
+                  <div className="relative pl-6 border-l border-slate-800 space-y-5">
+                    {selectedProject.logs.map((log) => {
+                      return (
+                        <div key={log.id} id={`timeline-item-${log.id}`} className="relative">
+                          
+                          {/* Circle status indicator */}
+                          <div className={`absolute -left-[35px] top-1 p-1 rounded-full ${getTimelineLogIconStyle(log.status)}`}>
+                            {log.status === 'success' && <CheckCircle size={10} />}
+                            {log.status === 'info' && <Info size={10} />}
+                            {log.status === 'alert' && <AlertCircle size={10} />}
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-850/70 p-3.5 rounded-xl hover:border-slate-800 transition relative group/log">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                              <h4 className="text-xs font-bold text-white tracking-wide">
+                                {log.title}
+                              </h4>
+                              <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1 shrink-0">
+                                <Calendar size={10} />
+                                {log.date}
+                              </span>
+                            </div>
+                            
+                            <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                              {log.description}
+                            </p>
+
+                            {/* Admin Delete Log */}
+                            {isAdminMode && (
+                              <button 
+                                id={`delete-log-${log.id}`}
+                                onClick={() => handleDeleteLog(selectedProject.id, log.id)}
+                                className="absolute right-3.5 top-3.5 p-1 text-slate-600 hover:text-rose-400 opacity-0 group-hover/log:opacity-100 transition-opacity"
+                                title="Remove Log entry"
+                              >
+                                <X size={10} />
+                              </button>
+                            )}
+
+                          </div>
+
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+
+                {/* Dynamic Google-OAuth Sign Up Verified Feedback & Comments Feed */}
+                <div id="project-community-discussion-vault" className="space-y-4 bg-slate-900/30 p-5 rounded-xl border border-slate-900 mt-2">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Users size={15} className="text-emerald-500 animate-pulse-slow" />
+                      <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-extrabold">
+                        Verified Community Discussion (Google Sign-Up)
+                      </h3>
+                    </div>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono font-bold">
+                      {(projectComments[selectedProject.id] || []).length} Comments
+                    </span>
+                  </div>
+
+                  {/* Comments presentation timeline */}
+                  {(!projectComments[selectedProject.id] || projectComments[selectedProject.id].length === 0) ? (
+                    <div className="py-2 text-center text-slate-500 text-xs italic">
+                      No discussions recorded from verified Google sign-ups yet. Be the first to reply!
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                      {projectComments[selectedProject.id].map((comm) => (
+                        <div key={comm.id} className="p-3 bg-slate-950/40 rounded-lg border border-slate-850 flex gap-3 items-start">
+                          <img 
+                            src={comm.userAvatar} 
+                            alt={comm.userName} 
+                            referrerPolicy="no-referrer"
+                            className="w-7 h-7 rounded-md object-cover border border-slate-800 shrink-0" 
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-emerald-400 truncate">{comm.userName}</span>
+                              <span className="text-[9px] font-mono text-slate-500 shrink-0">{comm.date}</span>
+                            </div>
+                            <p className="text-slate-300 text-xs mt-1 leading-relaxed">
+                              {comm.text}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Comment box form or Auth call-to-action */}
+                  {currentUser ? (
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const inp = e.currentTarget.elements.namedItem('commentText') as HTMLInputElement;
+                        if (inp && inp.value.trim()) {
+                          handleAddComment(inp.value.trim());
+                          inp.value = '';
+                        }
+                      }}
+                      className="pt-3 border-t border-slate-900 flex gap-2"
+                    >
+                      <input 
+                        type="text"
+                        name="commentText"
+                        placeholder="মাশাল্লাহ বলুন অথবা মতামত দিন..."
+                        className="flex-1 bg-slate-950 border border-slate-850 text-xs p-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100 font-medium font-sans"
+                        required
+                      />
+                      <button 
+                        type="submit"
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition"
+                      >
+                        মতামত
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="pt-3 border-t border-slate-900 bg-emerald-500/5 p-3 rounded-lg border border-emerald-500/10 text-center space-y-2">
+                      <p className="text-xs text-slate-300 leading-snug">
+                        নতুন ইউজার হিসেবে এপে মতামত কিংবা প্রজেক্ট সংক্রান্ত রিভিউ প্রকাশ করতে জাস্ট নিচের গুগল বোতামে চাপ দিয়ে সাইন আপ করুন:
+                      </p>
+                      <button
+                        onClick={() => setShowAuthModal(true)}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-950 hover:bg-slate-900 border border-emerald-500/25 hover:border-emerald-500/60 rounded-md text-[11px] font-bold text-slate-100 transition cursor-pointer font-sans"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                        </svg>
+                        <span>জাস্ট ৩ সেকেন্ডে গুগল সাইন আপ</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+              
+              {/* Cockpit active footer */}
+              <div className="p-4 bg-slate-950 border-t border-slate-850 flex items-center justify-between text-[10px] text-slate-400 shrink-0 uppercase font-mono font-bold tracking-widest bg-pattern-stripes">
+                <span>Database Status: Active Vault Storage</span>
+                <span>Authorized ID: HAIBARI-SEC-{selectedProject.id}</span>
+              </div>
+
+            </div>
           )}
-        </div>
-        
-        {isMine && <button className="opacity-0 group-hover:opacity-100 p-1.5 text-foundation-300 hover:text-foundation-900 transition-all"><X size={14} /></button>}
-      </div>
-    </div>
-  );
-}
 
+        </section>
 
-function Subscriptions({ profile }: { profile: UserProfile | null }) {
-  return (
-    <div className="space-y-6">
-      <div className="bg-foundation-900 text-white p-12 rounded-3xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-foundation-500/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-        <div className="relative">
-          <h3 className="text-3xl font-display mb-2">Benevolent Fund</h3>
-          <p className="text-foundation-400 text-sm">Monthly Subscription: 100 BDT</p>
+      </main>
+
+      {/* CREATE NEW CHARTER DIALOG MODAL (COMPLEX FORM OUTCOMES) */}
+      {showCreateModal && (
+        <div id="create-modal-overlay" className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           
-          <div className="mt-8 grid grid-cols-3 gap-8">
-            <div>
-              <p className="text-[10px] text-foundation-500 uppercase tracking-[0.2em] mb-1 font-bold">Total Contribution</p>
-              <p className="text-2xl font-display">0 <span className="text-xs text-foundation-400">BDT</span></p>
+          <div id="create-project-form-container" className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 sm:p-8 space-y-6 animate-zoomIn">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="font-display font-extrabold text-white text-lg flex items-center gap-2">
+                  <Plus className="text-emerald-500" />
+                  Initiate Foundation Charter
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-1 uppercase font-mono font-bold">New Hazi Bari community progress outline</p>
+              </div>
+              <button 
+                id="close-create-modal"
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
             </div>
-            <div>
-              <p className="text-[10px] text-foundation-500 uppercase tracking-[0.2em] mb-1 font-bold">Current Status</p>
-              <p className="text-2xl font-display text-foundation-400 italic">Clear</p>
-            </div>
+
+            <form onSubmit={handleCreateProject} className="space-y-4 text-xs">
+              
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 block">Project Headline/Title *</label>
+                <input 
+                  id="new-title-input"
+                  required
+                  type="text"
+                  placeholder="e.g. Village Solar Microgrid Setup"
+                  value={newTitle}
+                  onChange={e => setNewTitle(e.target.value)}
+                  className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 block">Secter Group Category *</label>
+                  <select 
+                    id="new-category-select"
+                    value={newCategory}
+                    onChange={e => setNewCategory(e.target.value as any)}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100"
+                  >
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Health">Health</option>
+                    <option value="Education">Education</option>
+                    <option value="Disaster Relief">Disaster Relief</option>
+                    <option value="Agriculture">Agriculture</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 block">Assigned Location *</label>
+                  <input 
+                    id="new-location-input"
+                    required
+                    type="text"
+                    placeholder="e.g. Satkhira Main East"
+                    value={newLocation}
+                    onChange={e => setNewLocation(e.target.value)}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 block">Brief Pitch Summary *</label>
+                <input 
+                  id="new-description-input"
+                  required
+                  type="text"
+                  placeholder="A concise, 1-sentence synopsis displayed inside cards..."
+                  value={newDescription}
+                  onChange={e => setNewDescription(e.target.value)}
+                  className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-300 block">In-Depth Background Charter (Details)</label>
+                <textarea 
+                  id="new-details-input"
+                  rows={3}
+                  placeholder="Provide comprehensive objectives, specifications, and layout guidelines..."
+                  value={newDetails}
+                  onChange={e => setNewDetails(e.target.value)}
+                  className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 resize-none font-sans"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 block">Target Budget (৳ BDT) *</label>
+                  <input 
+                    id="new-target-fund-input"
+                    required
+                    type="number"
+                    placeholder="e.g. 500000"
+                    value={newTargetFund}
+                    onChange={e => setNewTargetFund(e.target.value)}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 block">Initial Raised Fund (৳ BDT)</label>
+                  <input 
+                    id="new-raised-fund-input"
+                    type="number"
+                    placeholder="e.g. 10000"
+                    value={newRaisedFund}
+                    onChange={e => setNewRaisedFund(e.target.value)}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 block">Target Beneficiaries Count</label>
+                  <input 
+                    id="new-beneficiaries-input"
+                    type="number"
+                    placeholder="e.g. 800"
+                    value={newBeneficiaries}
+                    onChange={e => setNewBeneficiaries(e.target.value)}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 block">Visual Backdrop Skin</label>
+                  <select 
+                    id="new-gradient-select"
+                    value={newGradient}
+                    onChange={e => setNewGradient(e.target.value)}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-slate-100"
+                  >
+                    <option value="from-emerald-900 via-teal-950 to-slate-950">Emerald Mosqe Deep</option>
+                    <option value="from-cyan-900 via-blue-950 to-slate-950">Cyan Aqua Drills</option>
+                    <option value="from-indigo-900 via-slate-900 to-zinc-950">Midnight Classrooms</option>
+                    <option value="from-amber-900 via-stone-900 to-slate-950">Warm Amber Blankets</option>
+                    <option value="from-lime-900 via-emerald-950 to-slate-950">Lime Field Grow</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button 
+                  id="cancel-create-btn"
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="w-1/3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg transition text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  id="save-create-btn"
+                  type="submit"
+                  className="w-2/3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg transition shadow-lg shadow-emerald-950/40 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle size={14} /> Incorporate Project Charter
+                </button>
+              </div>
+
+            </form>
+          </div>
+
+        </div>
+      )}
+
+      {/* Structured Minimalist Footer */}
+      <footer id="main-footer" className="border-t border-slate-850 bg-slate-950/80 py-6 mt-12 transition bg-cover">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs text-slate-500 font-mono">
+            &copy; 2026 Hazi Bari Foundation. Built for communal upliftment and radical execution transparency.
+          </p>
+          <div className="flex items-center gap-4 text-xs text-slate-400 font-mono">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              Mainnet Active
+            </span>
+            <span className="text-slate-650">|</span>
+            <span>Local Vault Persistent Storage</span>
           </div>
         </div>
-      </div>
+      </footer>
 
-      <div className="bg-white rounded-2xl border border-foundation-300 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-foundation-300 flex items-center justify-between">
-          <h4 className="font-display font-medium text-lg">Transaction History</h4>
-          <button className="text-xs font-bold text-foundation-600 hover:text-foundation-900 transition-colors underline">Download Statement</button>
+      {/* Real Google One Tap Pop-up Prompt (নতুন ইউজার এপে জাস্ট অপশনে ট্যাপ সাইন আপ) */}
+      {showOneTap && !currentUser && (
+        <div id="google-onetap-prompt" className="fixed bottom-4 right-4 z-50 max-w-sm w-[340px] bg-slate-950/95 backdrop-blur-md rounded-xl border border-slate-800 shadow-2xl p-4 space-y-3.5 text-left animate-slide-up transition-all duration-300">
+          
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+              </svg>
+              <div>
+                <h4 className="text-xs font-bold text-white tracking-tight leading-none">Sign in with Google</h4>
+                <p className="text-[10px] text-slate-400 mt-0.5 leading-none">to Hazi Bari Foundation</p>
+              </div>
+            </div>
+            
+            <button 
+              id="dismiss-onetap"
+              onClick={() => {
+                setShowOneTap(false);
+                setOneTapDismissed(true);
+                localStorage.setItem('hazibari_onetap_dismissed', 'true');
+              }}
+              className="text-slate-500 hover:text-slate-300 p-0.5 rounded transition"
+              title="Dismiss One Tap"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <p className="text-[11px] text-slate-300 font-sans">
+            নতুন ইউজার হিসেবে এপের সব ফিচার ব্যবহারের জন্য জাস্ট নিচের অপশনে ট্যাপ করুন:
+          </p>
+
+          <div className="bg-slate-900/60 rounded-lg p-2.5 border border-slate-850 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img 
+                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100" 
+                alt="Monir Ahamed Arfin Avatar"
+                className="w-8 h-8 rounded-full object-cover border border-slate-700 shrink-0" 
+              />
+              <div className="min-w-0 text-left">
+                <p className="text-xs font-bold text-slate-100 truncate">Md. Monir Ahamed Arfin</p>
+                <p className="text-[10px] text-slate-400 truncate font-mono">mdmonirahamedarfin@gmail.com</p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            id="onetap-continue-btn"
+            disabled={isSigningIn}
+            onClick={() => handleGoogleSignInSimulated({
+              name: 'Md. Monir Ahamed Arfin',
+              email: 'mdmonirahamedarfin@gmail.com',
+              avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'
+            })}
+            className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-lg shadow-emerald-950/20 animate-pulse font-sans"
+          >
+            {isSigningIn ? (
+              <span className="flex items-center gap-1.5 font-mono">
+                <Activity size={12} className="animate-spin" /> Connection Secure...
+              </span>
+            ) : (
+              <span>Continue as Md. Monir</span>
+            )}
+          </button>
+          
+          <div className="text-center">
+            <button 
+              onClick={() => {
+                setShowOneTap(false);
+                setShowAuthModal(true);
+              }}
+              className="text-[10px] text-slate-400 hover:text-emerald-400 hover:underline transition font-semibold"
+            >
+              Use another Google account
+            </button>
+          </div>
+
         </div>
-        <div className="p-12 text-center text-foundation-400 italic">
-          <Heart className="mx-auto mb-4 opacity-10" size={48} />
-          <p>No recent contributions found in your records.</p>
+      )}
+
+      {/* Immersive Google Account Chooser & Auth Center Modal */}
+      {showAuthModal && (
+        <div id="google-auth-modal-overlay" className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full shadow-2xl p-6 sm:p-8 space-y-6 text-left relative">
+            
+            <button 
+              id="close-auth-modal"
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full transition bg-slate-950 border border-slate-850"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="mx-auto h-12 w-12 rounded-2xl bg-slate-950 border border-slate-850 flex items-center justify-center text-white shadow-xl">
+                <svg viewBox="0 0 24 24" className="w-6 h-6">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                </svg>
+              </div>
+              <h3 className="font-display font-black text-white text-base tracking-tight">গুগল সাইন-আপ সেন্টার</h3>
+              <p className="text-xs text-slate-400 font-sans">Hazi Bari Foundation Development Portal এ আপনাকে স্বাগতম</p>
+            </div>
+
+            {isSigningIn ? (
+              <div className="py-8 flex flex-col items-center justify-center space-y-3.5">
+                <div className="h-9 w-9 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                <p className="text-xs font-mono text-slate-400 uppercase tracking-widest animate-pulse font-bold">Connecting Google Node...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Select a Google Account to sign up:</p>
+                
+                {/* Account list items */}
+                <div className="space-y-2.5">
+                  {[
+                    { name: 'Md. Monir Ahamed Arfin', email: 'mdmonirahamedarfin@gmail.com', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100' },
+                    { name: 'Amina Al-Hasan', email: 'amina.alhasan@gmail.com', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100' },
+                    { name: 'Guest Developer', email: 'guest.dev@gmail.com', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100' }
+                  ].map((account, i) => (
+                    <button
+                      key={i}
+                      disabled={isSigningIn}
+                      type="button"
+                      onClick={() => handleGoogleSignInSimulated(account)}
+                      className="w-full p-2.5 bg-slate-950 hover:bg-slate-950/80 border border-slate-850 hover:border-emerald-500/40 rounded-xl transition flex items-center justify-between gap-3 text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img 
+                          src={account.avatar} 
+                          alt={account.name} 
+                          className="w-7.5 h-7.5 rounded-full object-cover border border-slate-855 shrink-0 group-hover:scale-105 transition" 
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-200 truncate group-hover:text-emerald-400 transition">{account.name}</p>
+                          <p className="text-[9px] text-slate-500 font-mono truncate">{account.email}</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] uppercase font-mono tracking-wider font-bold bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded shrink-0 group-hover:border-emerald-500/20 group-hover:text-emerald-400 transition">
+                        Tap
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-850"></div>
+                  <span className="flex-shrink mx-3 text-[9px] font-mono text-slate-500 uppercase tracking-widest">Or mock input</span>
+                  <div className="flex-grow border-t border-slate-850"></div>
+                </div>
+
+                {/* Custom Mock Account Form */}
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const name = (fd.get('custName') as string).trim();
+                    const email = (fd.get('custEmail') as string).trim();
+                    if (name && email) {
+                      handleGoogleSignInSimulated({
+                        name,
+                        email,
+                        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'
+                      });
+                    }
+                  }}
+                  className="space-y-2.5"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="text"
+                      name="custName"
+                      required
+                      placeholder="আপনার নাম (Name)"
+                      className="w-full text-xs p-2 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 placeholder:text-slate-650 focus:outline-none focus:border-emerald-500 font-sans"
+                    />
+                    <input 
+                      type="email"
+                      name="custEmail"
+                      required
+                      placeholder="গুগল ইমেইল (Gmail)"
+                      className="w-full text-xs p-2 bg-slate-950 border border-slate-850 rounded-lg text-slate-100 placeholder:text-slate-650 focus:outline-none focus:border-emerald-500 font-sans"
+                    />
+                  </div>
+                  <button 
+                    type="submit"
+                    className="w-full py-2 bg-slate-950 border border-slate-800 hover:border-emerald-500/60 font-bold text-[10px] text-emerald-400 rounded-lg transition text-center cursor-pointer uppercase tracking-wider font-sans"
+                  >
+                    + Tap Custom Google SignUp
+                  </button>
+                </form>
+
+              </div>
+            )}
+
+            <div className="pt-1 text-center text-[9px] text-slate-500 leading-snug font-sans">
+              Secure simulated Google Node powered by Hazi Bari Cryptographic Vault protocols.
+            </div>
+
+          </div>
         </div>
-      </div>
+      )}
+
     </div>
   );
 }
